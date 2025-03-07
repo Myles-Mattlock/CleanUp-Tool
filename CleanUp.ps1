@@ -63,7 +63,7 @@ try {
 
 # Pause to allow the user to review the output
 Add-Type -AssemblyName PresentationFramework
-[System.Windows.MessageBox]::Show("Any issues please report to myles.mattlock@evolved-ideas.com", "User Feedback!")
+[System.Windows.MessageBox]::Show("Any issues please report to myles.mattlock@outlook.com", "User Feedback!")
 
 Write-Output "Application closed"
 Start-Sleep -Seconds 3
