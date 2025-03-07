@@ -46,8 +46,9 @@ try {
             Start-Sleep -Seconds 90
         } else {
             Write-Output "No Previous Windows installation found."
-            cleanmgr.exe /d C: /VERYLOWDISK
-            Start-Sleep -Seconds 15
+            reg import "C:\Apps\SystemCleanup\DiskCleanupSettings2.reg"
+            Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:2"
+            Start-Sleep -Seconds 90
         }
         Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase
     } else {
