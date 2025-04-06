@@ -26,14 +26,26 @@ try {
     # Act based on the user's choice
     if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
         Write-Output "User chose YES"
-        # Commands to clear cache and delete files in recycle bin
-        Write-Host "Clearing cache"
-        Remove-Item C:\Windows\Temp\* -Recurse -Force
-        Remove-Item C:\Windows\Prefetch\* -Recurse -Force
-        Remove-Item C:\Windows\SoftwareDistribution\Download\* -Recurse -Force
-        $TempPath = [System.IO.Path]::GetTempPath()
-        Remove-Item "$TempPath\*" -Recurse -Force
-        Write-Host "Cleaning up system"
+        
+        try {
+            # Commands to clear cache and delete files in recycle bin
+            Write-Host "Clearing cache"
+            Remove-Item C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item C:\Windows\Prefetch\* -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item C:\Windows\SoftwareDistribution\Download\* -Recurse -Force -ErrorAction SilentlyContinue
+            $TempPath = [System.IO.Path]::GetTempPath()
+            Remove-Item "$TempPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+            
+            Write-Host "Cleaning up system"
+        }
+        catch {
+            $ErrorMessage = "Error occurred on $((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')): $($_.Exception.Message)"
+            Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
+            # Optionally, you can still provide a silent indication that something went wrong
+            # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
+        }
+
+        Write-Host "Cleanup process finished."
         
         # Check if Windows.old exists
         if (Test-Path "C:\Windows.old") {
