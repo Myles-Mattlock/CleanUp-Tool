@@ -10,7 +10,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 # Script logic below this point will run with elevated privileges
 Write-Output "Running as Administrator! Proceeding with the DISM command..."
 
-# Run the DISM command
+# Run the Cleanup commands
 try {
         ## Cleaning up
         Add-Type -AssemblyName System.Windows.Forms
@@ -39,7 +39,7 @@ try {
             Write-Host "Cleaning up system"
         }
         catch {
-            $ErrorMessage = "Error occurred on $((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')): $($_.Exception.Message)"
+            $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
             Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
             # Optionally, you can still provide a silent indication that something went wrong
             # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
@@ -51,16 +51,34 @@ try {
         if (Test-Path "C:\Windows.old") {
             # Importing cleanup settings
             Write-Output "Previous Windows installation found. Removing..."
-            reg import "C:\Apps\SystemCleanup\DiskCleanupSettings.reg"
+            
+            try {
+                reg import "C:\Apps\SystemCleanup\DiskCleanupSettings.reg"
                         
-            # Remove Windows.old
-            Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:1"
-            Start-Sleep -Seconds 90
+                # Remove Windows.old
+                Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:1" -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 180
+            }
+            catch {
+                $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
+                Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
+                # Optionally, you can still provide a silent indication that something went wrong
+                # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
+            }
         } else {
             Write-Output "No Previous Windows installation found."
-            reg import "C:\Apps\SystemCleanup\DiskCleanupSettings2.reg"
-            Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:2"
-            Start-Sleep -Seconds 90
+            
+            try {
+                reg import "C:\Apps\SystemCleanup\DiskCleanupSettings2.reg"
+                Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:2" -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 90
+            }
+            catch {
+                $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
+                Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
+                # Optionally, you can still provide a silent indication that something went wrong
+                # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
+            }
         }
         Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase
     } else {
@@ -76,7 +94,7 @@ try {
 
 # Pause to allow the user to review the output
 Add-Type -AssemblyName PresentationFramework
-[System.Windows.MessageBox]::Show("Any issues please report to myles.mattlock@outlook.com", "User Feedback!")
+[System.Windows.MessageBox]::Show("Any issues/sugguestions please report to myles.mattlock@outlook.com", "User Feedback!")
 
 Write-Output "Application closed"
 Start-Sleep -Seconds 3
