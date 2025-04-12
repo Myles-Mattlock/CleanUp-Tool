@@ -1,0 +1,46 @@
+name: Build and Package PowerShell Script
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up PowerShell
+      uses: actions/setup-powershell@v3
+      with:
+        powershell-version: '7.4' # Or your desired PowerShell version
+
+    - name: Install ps2exe module
+      run: Install-Module -Name ps2exe -Force
+
+    - name: Convert PowerShell script to executable
+      run: |
+        ps2exe -InputFile CleanUp.ps1 -OutputFile "SystemCleanUp/System CleanUp.exe" -IconFile Refresh.ico -version "1.3"
+      shell: pwsh
+
+    - name: Set up Windows SDK tools
+      uses: actions/checkout@v4
+      with:
+        repository: microsoft/windows-sdk-samples
+        path: windows-sdk-samples
+
+    - name: Run mt.exe to embed manifest
+      run: |
+        $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
+        if (-not (Test-Path $mtPath)) {
+          Write-Error "mt.exe not found at the expected path."
+          exit 1
+        }
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System CleanUp.exe";#1
+      shell: pwsh
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SystemCleanUp
+        path: SystemCleanUp

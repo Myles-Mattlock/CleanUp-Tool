@@ -8,7 +8,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # Script logic below this point will run with elevated privileges
-Write-Output "Running as Administrator! Proceeding with the Cleanup commands..."
+Write-Output "Running as Administrator! Proceeding with the Server Cleanup commands..."
 
 # Run the Cleanup commands
 try {
