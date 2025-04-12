@@ -10,10 +10,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up PowerShell
+    # Attempting setup-powershell v2
+    - name: Set up PowerShell (v2)
       uses: powershell/setup-powershell@v2
       with:
         powershell-version: '7.4' # Or your desired PowerShell version
+
+    # - name: Set up PowerShell (v1)
+    #   uses: powershell/setup-powershell@v1
+    #   with:
+    #     powershell-version: '7.4' # Or your desired PowerShell version
 
     - name: Install ps2exe module
       run: |
