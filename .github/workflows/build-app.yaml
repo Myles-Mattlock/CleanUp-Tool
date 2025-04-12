@@ -11,26 +11,28 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Cache PowerShell Modules
+    - name: Cache PowerShell Modules (System CleanUp)
       uses: actions/cache@v4
+      id: cache-psmodules-system
       with:
         path: ~\Documents\WindowsPowerShell\Modules
-        key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
+        key: ${{ runner.os }}-psmodules-system-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
 
-    - name: Install ps2exe module
-      if: steps.cache-psmodules.outputs.cache-hit != 'true'
+    - name: Install ps2exe module (System CleanUp)
+      if: steps.cache-psmodules-system.outputs.cache-hit != 'true'
       run: |
         pwsh -Command "Install-Module -Name ps2exe -Force"
       shell: pwsh
 
-    - name: Cache Build Tools
+    - name: Cache Build Tools (System CleanUp)
       uses: actions/cache@v4
+      id: cache-buildtools-system
       with:
         path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
-        key: ${{ runner.os }}-buildtools-2022 # Consider a more dynamic key if needed
+        key: ${{ runner.os }}-buildtools-system-2022 # Consider a more dynamic key if needed
 
-    - name: Install Visual Studio Build Tools
-      if: steps.cache-buildtools.outputs.cache-hit != 'true'
+    - name: Install Visual Studio Build Tools (System CleanUp)
+      if: steps.cache-buildtools-system.outputs.cache-hit != 'true'
       run: |
         # Remove the file if it exists
         if (Test-Path "BuildTools_Full.exe") {
@@ -48,12 +50,12 @@ jobs:
         }
       shell: pwsh
 
-    - name: Set Environment Path
+    - name: Set Environment Path (System CleanUp)
       run: |
         $env:PATH += ";C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64"
       shell: pwsh
 
-    - name: Convert PowerShell script to executable
+    - name: Convert PowerShell script to executable (System CleanUp)
       run: |
         pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'SystemCleanUp/System CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
       shell: pwsh
@@ -86,24 +88,50 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Restore PowerShell Modules from Cache
+    - name: Install ps2exe module (Server CleanUp - Explicit Install)
+      run: |
+        pwsh -Command "Install-Module -Name ps2exe -Force"
+      shell: pwsh
+
+    - name: Cache PowerShell Modules (Server CleanUp)
       uses: actions/cache@v4
+      id: cache-psmodules-server
       with:
         path: ~\Documents\WindowsPowerShell\Modules
-        key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }}
+        key: ${{ runner.os }}-psmodules-server-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
 
-    - name: Restore Build Tools from Cache
+    - name: Cache Build Tools (Server CleanUp)
       uses: actions/cache@v4
+      id: cache-buildtools-server
       with:
         path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
-        key: ${{ runner.os }}-buildtools-2022
+        key: ${{ runner.os }}-buildtools-server-2022 # Consider a more dynamic key if needed
 
-    - name: Set Environment Path
+    - name: Install Visual Studio Build Tools (Server CleanUp)
+      if: steps.cache-buildtools-server.outputs.cache-hit != 'true'
+      run: |
+        # Remove the file if it exists
+        if (Test-Path "BuildTools_Full.exe") {
+          Remove-Item "BuildTools_Full.exe"
+        }
+        try {
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2084274" -OutFile "BuildTools_Full.exe" -ErrorAction Stop
+          Write-Host "BuildTools_Full.exe downloaded successfully."
+          Start-Process -Wait -FilePath "BuildTools_Full.exe" -ArgumentList "/Quiet", "/InstallSelectableItems", "Microsoft.DesktopBuildTools" -ErrorAction Stop
+          Write-Host "Build Tools installed successfully (Direct Download)."
+        } catch {
+          Write-Warning "Direct download of Build Tools failed: $($_.Exception.Message). Attempting installation via choco..."
+          choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+          Write-Host "Build Tools installed successfully (via choco)."
+        }
+      shell: pwsh
+
+    - name: Set Environment Path (Server CleanUp)
       run: |
         $env:PATH += ";C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64"
       shell: pwsh
 
-    - name: Convert PowerShell script to executable
+    - name: Convert PowerShell script to executable (Server CleanUp)
       run: |
         pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'ServerCleanUp/Server CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
       shell: pwsh
