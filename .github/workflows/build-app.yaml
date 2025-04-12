@@ -68,7 +68,7 @@ jobs:
             exit 1
           }
         }
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System Clean Up.exe";#1
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System CleanUp.exe";#1
       shell: pwsh
 
     - name: Upload Artifact (System CleanUp)
@@ -118,7 +118,7 @@ jobs:
             exit 1
           }
         }
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"ServerCleanUp\Server Clean Up.exe";#1
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"ServerCleanUp\Server CleanUp.exe";#1
       shell: pwsh
 
     - name: Upload Artifact (Server CleanUp)
