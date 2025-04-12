@@ -5,7 +5,7 @@ on: [push, workflow_dispatch]
 jobs:
   system_cleanup_build:
     name: Build System CleanUp
-    runs-on: windows-2025
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
@@ -13,9 +13,9 @@ jobs:
 
     - name: Cache PowerShell Modules
       uses: actions/cache@v4
-      id: cache-psmodules
-      path: ~\Documents\WindowsPowerShell\Modules
-      key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
+      with:
+        path: ~\Documents\WindowsPowerShell\Modules
+        key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
 
     - name: Install ps2exe module
       if: steps.cache-psmodules.outputs.cache-hit != 'true'
@@ -25,14 +25,27 @@ jobs:
 
     - name: Cache Build Tools
       uses: actions/cache@v4
-      id: cache-buildtools
-      path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
-      key: ${{ runner.os }}-buildtools-2022 # Consider a more dynamic key if needed
+      with:
+        path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+        key: ${{ runner.os }}-buildtools-2022 # Consider a more dynamic key if needed
 
     - name: Install Visual Studio Build Tools
       if: steps.cache-buildtools.outputs.cache-hit != 'true'
       run: |
-        # ... (Your existing Build Tools installation script) ...
+        # Remove the file if it exists
+        if (Test-Path "BuildTools_Full.exe") {
+          Remove-Item "BuildTools_Full.exe"
+        }
+        try {
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2084274" -OutFile "BuildTools_Full.exe" -ErrorAction Stop
+          Write-Host "BuildTools_Full.exe downloaded successfully."
+          Start-Process -Wait -FilePath "BuildTools_Full.exe" -ArgumentList "/Quiet", "/InstallSelectableItems", "Microsoft.DesktopBuildTools" -ErrorAction Stop
+          Write-Host "Build Tools installed successfully (Direct Download)."
+        } catch {
+          Write-Warning "Direct download of Build Tools failed: $($_.Exception.Message). Attempting installation via choco..."
+          choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+          Write-Host "Build Tools installed successfully (via choco)."
+        }
       shell: pwsh
 
     - name: Set Environment Path
@@ -47,7 +60,15 @@ jobs:
 
     - name: Run mt.exe to embed manifest (System CleanUp)
       run: |
-        # ... (Your existing mt.exe command) ...
+        $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
+        if (-not (Test-Path $mtPath)) {
+          $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | Select-Object -ExpandProperty FullName
+          if (-not $mtPath) {
+            Write-Error "mt.exe not found."
+            exit 1
+          }
+        }
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System Clean Up.exe";#1
       shell: pwsh
 
     - name: Upload Artifact (System CleanUp)
@@ -58,7 +79,7 @@ jobs:
 
   server_cleanup_build:
     name: Build Server CleanUp
-    runs-on: windows-2025
+    runs-on: windows-latest
     needs: system_cleanup_build
 
     steps:
@@ -67,15 +88,15 @@ jobs:
 
     - name: Restore PowerShell Modules from Cache
       uses: actions/cache@v4
-      id: cache-psmodules
-      path: ~\Documents\WindowsPowerShell\Modules
-      key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }}
+      with:
+        path: ~\Documents\WindowsPowerShell\Modules
+        key: ${{ runner.os }}-psmodules-${{ hashFiles('**/requirements.psd1') }}
 
     - name: Restore Build Tools from Cache
       uses: actions/cache@v4
-      id: cache-buildtools
-      path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
-      key: ${{ runner.os }}-buildtools-2022
+      with:
+        path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+        key: ${{ runner.os }}-buildtools-2022
 
     - name: Set Environment Path
       run: |
@@ -89,7 +110,15 @@ jobs:
 
     - name: Run mt.exe to embed manifest (Server CleanUp)
       run: |
-        # ... (Your existing mt.exe command) ...
+        $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
+        if (-not (Test-Path $mtPath)) {
+          $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | Select-Object -ExpandProperty FullName
+          if (-not $mtPath) {
+            Write-Error "mt.exe not found."
+            exit 1
+          }
+        }
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"ServerCleanUp\Server Clean Up.exe";#1
       shell: pwsh
 
     - name: Upload Artifact (Server CleanUp)
