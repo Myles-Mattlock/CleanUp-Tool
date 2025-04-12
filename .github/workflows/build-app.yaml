@@ -10,14 +10,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # Attempting setup-powershell v2
-    - name: Set up PowerShell (v2)
-      uses: powershell/setup-powershell@v2
-      with:
-        powershell-version: '7.4' # Or your desired PowerShell version
-
-    # - name: Set up PowerShell (v1)
-    #   uses: powershell/setup-powershell@v1
+    # Temporarily bypassing setup-powershell
+    # - name: Set up PowerShell
+    #   uses: powershell/setup-powershell@v3
     #   with:
     #     powershell-version: '7.4' # Or your desired PowerShell version
 
