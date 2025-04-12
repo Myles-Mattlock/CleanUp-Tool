@@ -11,7 +11,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up PowerShell
-      uses: powershell/setup-powershell@v3
+      uses: powershell/setup-powershell@v2
       with:
         powershell-version: '7.4' # Or your desired PowerShell version
 
