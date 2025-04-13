@@ -1,11 +1,16 @@
 name: Build and Package Multiple PowerShell Scripts
 
-on: [push, workflow_dispatch]
+on: 
+  push:
+    Branches:
+      - dev
+      - main
+  workflow_dispatch:
 
 jobs:
   system_cleanup_build:
     name: Build System CleanUp
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
     - name: Checkout code
@@ -81,7 +86,7 @@ jobs:
 
   server_cleanup_build:
     name: Build Server CleanUp
-    runs-on: windows-latest
+    runs-on: windows-2025
     needs: system_cleanup_build
 
     steps:
