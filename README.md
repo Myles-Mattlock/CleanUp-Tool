@@ -11,6 +11,6 @@ Then you will need the windows SDK to be able to make the app ask for admin cred
 When building .exe file you will need to do the following
 1. go to the folder that contains CleanUp.ps1, Refresh.ico, elevate.manifest.xml
 2. run the following command "ps2exe -InputFile CleanUp.ps1 -OutputFile "SystemCleanUp/System CleanUp.exe" -IconFile Refresh.ico -version "1.3""
-3. Then go to CMD and run "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe" -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\Server CleanUp.exe";#1
+3. Then go to CMD and run cmd "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe" -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System CleanUp.exe";#1
 
 Please Note: if 3. doesn't work you will need to install windows sdk (https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/)
