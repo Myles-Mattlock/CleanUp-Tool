@@ -80,11 +80,16 @@ jobs:
         & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System CleanUp.exe";#1
       shell: pwsh
 
-    - name: Upload Artifact (System CleanUp)
+    - name: Create System CleanUp ZIP
+      run: |
+        Compress-Archive -Path "SystemCleanUp\System CleanUp.exe", "SystemCleanUp\*.reg" -DestinationPath "SystemCleanUp/SystemCleanUp.zip"
+      shell: pwsh
+
+    - name: Upload Artifact (System CleanUp ZIP)
       uses: actions/upload-artifact@v4
       with:
-        name: SystemCleanUp
-        path: SystemCleanUp
+        name: SystemCleanUpZIP
+        path: SystemCleanUp/SystemCleanUp.zip
 
   server_cleanup_build:
     name: Build Server CleanUp
@@ -156,35 +161,42 @@ jobs:
         & $mtPath -manifest elevate.manifest.xml -outputresource:"ServerCleanUp\Server CleanUp.exe";#1
       shell: pwsh
 
-    - name: Upload Artifact (Server CleanUp)
+    - name: Create Server CleanUp ZIP
+      run: |
+        Compress-Archive -Path "ServerCleanUp\Server CleanUp.exe", "ServerCleanUp\*.reg" -DestinationPath "ServerCleanUp/ServerCleanUp.zip"
+      shell: pwsh
+
+    - name: Upload Artifact (Server CleanUp ZIP)
       uses: actions/upload-artifact@v4
       with:
-        name: ServerCleanUp
-        path: ServerCleanUp
+        name: ServerCleanUpZIP
+        path: ServerCleanUp/ServerCleanUp.zip
 
   create_release:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [system_cleanup_build, server_cleanup_build]
     if: github.ref_type == 'tag'
+    permissions:
+      contents: write
 
     steps:
-    - name: Download System CleanUp Artifact
+    - name: Download System CleanUp ZIP Artifact
       uses: actions/download-artifact@v4
       with:
-        name: SystemCleanUp
+        name: SystemCleanUpZIP
 
-    - name: Download Server CleanUp Artifact
+    - name: Download Server CleanUp ZIP Artifact
       uses: actions/download-artifact@v4
       with:
-        name: ServerCleanUp
+        name: ServerCleanUpZIP
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ github.ref_name }}
         files: |
-          SystemCleanUp/System CleanUp.exe
-          ServerCleanUp/Server CleanUp.exe
+          SystemCleanUpZIP/SystemCleanUp.zip
+          ServerCleanUpZIP/ServerCleanUp.zip
         draft: false
-        prerelease: ${{ contains(github.ref_name, '-') }} # Mark as prerelease if tag contains a hyphen (e.g., v1.0.0-beta)
+        prerelease: ${{ contains(github.ref_name, '-') }}
