@@ -1,0 +1,190 @@
+name: Build and Package Multiple PowerShell Scripts and Create Release
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    tags:
+      - 'v*.*.*' # Trigger on tags like v1.0.0
+  workflow_dispatch:
+
+jobs:
+  system_cleanup_build:
+    name: Build System CleanUp
+    runs-on: windows-2025
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Cache PowerShell Modules (System CleanUp)
+      uses: actions/cache@v4
+      id: cache-psmodules-system
+      with:
+        path: ~\Documents\WindowsPowerShell\Modules
+        key: ${{ runner.os }}-psmodules-system-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
+
+    - name: Install ps2exe module (System CleanUp)
+      if: steps.cache-psmodules-system.outputs.cache-hit != 'true'
+      run: |
+        pwsh -Command "Install-Module -Name ps2exe -Force"
+      shell: pwsh
+
+    - name: Cache Build Tools (System CleanUp)
+      uses: actions/cache@v4
+      id: cache-buildtools-system
+      with:
+        path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+        key: ${{ runner.os }}-buildtools-system-2022 # Consider a more dynamic key if needed
+
+    - name: Install Visual Studio Build Tools (System CleanUp)
+      if: steps.cache-buildtools-system.outputs.cache-hit != 'true'
+      run: |
+        # Remove the file if it exists
+        if (Test-Path "BuildTools_Full.exe") {
+          Remove-Item "BuildTools_Full.exe"
+        }
+        try {
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2084274" -OutFile "BuildTools_Full.exe" -ErrorAction Stop
+          Write-Host "BuildTools_Full.exe downloaded successfully."
+          Start-Process -Wait -FilePath "BuildTools_Full.exe" -ArgumentList "/Quiet", "/InstallSelectableItems", "Microsoft.DesktopBuildTools" -ErrorAction Stop
+          Write-Host "Build Tools installed successfully (Direct Download)."
+        } catch {
+          Write-Warning "Direct download of Build Tools failed: $($_.Exception.Message). Attempting installation via choco..."
+          choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+          Write-Host "Build Tools installed successfully (via choco)."
+        }
+      shell: pwsh
+
+    - name: Set Environment Path (System CleanUp)
+      run: |
+        $env:PATH += ";C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64"
+      shell: pwsh
+
+    - name: Convert PowerShell script to executable (System CleanUp)
+      run: |
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'SystemCleanUp/System CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
+      shell: pwsh
+
+    - name: Run mt.exe to embed manifest (System CleanUp)
+      run: |
+        $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
+        if (-not (Test-Path $mtPath)) {
+          $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | Select-Object -ExpandProperty FullName
+          if (-not $mtPath) {
+            Write-Error "mt.exe not found."
+            exit 1
+          }
+        }
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"SystemCleanUp\System CleanUp.exe";#1
+      shell: pwsh
+
+    - name: Upload Artifact (System CleanUp)
+      uses: actions/upload-artifact@v4
+      with:
+        name: SystemCleanUp
+        path: SystemCleanUp
+
+  server_cleanup_build:
+    name: Build Server CleanUp
+    runs-on: windows-2025
+    needs: system_cleanup_build
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install ps2exe module (Server CleanUp - Explicit Install)
+      run: |
+        pwsh -Command "Install-Module -Name ps2exe -Force"
+      shell: pwsh
+
+    - name: Cache PowerShell Modules (Server CleanUp)
+      uses: actions/cache@v4
+      id: cache-psmodules-server
+      with:
+        path: ~\Documents\WindowsPowerShell\Modules
+        key: ${{ runner.os }}-psmodules-server-${{ hashFiles('**/requirements.psd1') }} # Adjust pattern as needed
+
+    - name: Cache Build Tools (Server CleanUp)
+      uses: actions/cache@v4
+      id: cache-buildtools-server
+      with:
+        path: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+        key: ${{ runner.os }}-buildtools-server-2022 # Consider a more dynamic key if needed
+
+    - name: Install Visual Studio Build Tools (Server CleanUp)
+      if: steps.cache-buildtools-server.outputs.cache-hit != 'true'
+      run: |
+        # Remove the file if it exists
+        if (Test-Path "BuildTools_Full.exe") {
+          Remove-Item "BuildTools_Full.exe"
+        }
+        try {
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2084274" -OutFile "BuildTools_Full.exe" -ErrorAction Stop
+          Write-Host "BuildTools_Full.exe downloaded successfully."
+          Start-Process -Wait -FilePath "BuildTools_Full.exe" -ArgumentList "/Quiet", "/InstallSelectableItems", "Microsoft.DesktopBuildTools" -ErrorAction Stop
+          Write-Host "Build Tools installed successfully (Direct Download)."
+        } catch {
+          Write-Warning "Direct download of Build Tools failed: $($_.Exception.Message). Attempting installation via choco..."
+          choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+          Write-Host "Build Tools installed successfully (via choco)."
+        }
+      shell: pwsh
+
+    - name: Set Environment Path (Server CleanUp)
+      run: |
+        $env:PATH += ";C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64"
+      shell: pwsh
+
+    - name: Convert PowerShell script to executable (Server CleanUp)
+      run: |
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'ServerCleanUp/Server CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
+      shell: pwsh
+
+    - name: Run mt.exe to embed manifest (Server CleanUp)
+      run: |
+        $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
+        if (-not (Test-Path $mtPath)) {
+          $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | Select-Object -ExpandProperty FullName
+          if (-not $mtPath) {
+            Write-Error "mt.exe not found."
+            exit 1
+          }
+        }
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"ServerCleanUp\Server CleanUp.exe";#1
+      shell: pwsh
+
+    - name: Upload Artifact (Server CleanUp)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ServerCleanUp
+        path: ServerCleanUp
+
+  create_release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [system_cleanup_build, server_cleanup_build]
+    if: github.ref_type == 'tag'
+
+    steps:
+    - name: Download System CleanUp Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: SystemCleanUp
+
+    - name: Download Server CleanUp Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ServerCleanUp
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        files: |
+          SystemCleanUp/System CleanUp.exe
+          ServerCleanUp/Server CleanUp.exe
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }} # Mark as prerelease if tag contains a hyphen (e.g., v1.0.0-beta)
