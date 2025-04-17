@@ -196,7 +196,7 @@ jobs:
       with:
         tag_name: ${{ github.ref_name }}
         files: |
-          SystemCleanUpZIP/SystemCleanUp.zip
-          ServerCleanUpZIP/ServerCleanUp.zip
+          SystemCleanUp.zip
+          ServerCleanUp.zip
         draft: false
         prerelease: ${{ contains(github.ref_name, '-') }}
