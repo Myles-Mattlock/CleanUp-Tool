@@ -52,9 +52,7 @@ try {
             # Importing cleanup settings
             Write-Output "Previous Windows installation found. Removing..."
             
-            try {
-                reg import "C:\Apps\SystemCleanup\DiskCleanupSettings.reg"
-                        
+            try {  
                 # Remove Windows.old
                 Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:1" -ErrorAction SilentlyContinue
                 Start-Sleep -Seconds 180
@@ -69,7 +67,6 @@ try {
             Write-Output "No Previous Windows installation found."
             
             try {
-                reg import "C:\Apps\SystemCleanup\DiskCleanupSettings2.reg"
                 Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:2" -ErrorAction SilentlyContinue
                 Start-Sleep -Seconds 90
             }
@@ -92,9 +89,5 @@ try {
     Write-Output $_.Exception.Message
 }
 
-# Pause to allow the user to review the output
-Add-Type -AssemblyName PresentationFramework
-[System.Windows.MessageBox]::Show("Any issues/sugguestions please report to myles.mattlock@outlook.com", "User Feedback!")
-
-Write-Output "Application closed"
-Start-Sleep -Seconds 3
+Write-Output "Successfully cleaned up Windows, Application closing..."
+Start-Sleep -Seconds 5
