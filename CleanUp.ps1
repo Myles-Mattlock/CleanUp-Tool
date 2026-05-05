@@ -1,72 +1,94 @@
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "ERROR: Please run as Administrator." -ForegroundColor Red
-    Pause ; Exit
+    Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
+    Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host "Press any key to exit..."
+    $null = [Console]::ReadKey($true)
+    Exit
 }
 
+# 2. Robust Path Logic (Fixes the EXE empty string error)
+if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
+    $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+} else {
+    $CurrentDir = $PSScriptRoot
+}
+# Fallback if running in a weird shell environment
+if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
+
 # --- CONFIGURATION ---
-# List your .reg filenames here (ensure they are in the same folder as this script)
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
 # ---------------------
 
+# Ensure Log directory exists
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 
-Write-Host "--- Starting Optimized System Cleanup ---" -ForegroundColor Cyan
+Write-Host "--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
+Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
 
-# 2. Import Sageset Registry Settings
-Write-Host "[0/5] Importing Registry Settings..." -ForegroundColor Yellow
+# 3. Import Sageset Registry Settings
+Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
-    $FilePath = Join-Path $PSScriptRoot $File
+    $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
-        # Import silently
         $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
         if ($proc.ExitCode -eq 0) {
-            Write-Host "  > Successfully imported $File" -ForegroundColor Gray
+            Write-Host "  > Successfully applied: $File" -ForegroundColor Gray
         } else {
-            Write-Warning "  > Failed to import $File (Exit Code: $($proc.ExitCode))"
+            Write-Warning "  > Failed to apply $File (Code: $($proc.ExitCode))"
         }
     } else {
-        Write-Warning "  > Reg file not found: $File (Skipping)"
+        Write-Warning "  > Registry file not found: $FilePath"
     }
 }
 
-# 3. User Confirmation
-$Confirmation = Read-Host "`nReady to proceed with cleanup? (Y/N)"
-if ($Confirmation -notmatch "y|yes") { Exit }
+# 4. User Confirmation
+Write-Host ""
+$Confirmation = Read-Host "Begin system cleanup? (Y/N)"
+if ($Confirmation -notmatch "y|yes") {
+    Write-Host "Operation cancelled." -ForegroundColor Red
+    Start-Sleep -Seconds 2
+    Exit
+}
 
 try {
-    # 4. Manual Folder Cleanup
-    Write-Host "`n[1/5] Clearing temp folders..." -ForegroundColor Yellow
+    # 5. Manual Folder Cleanup
+    Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
+
     foreach ($Path in $TargetFolders) {
         Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 5. Recycle Bin
-    Write-Host "[2/5] Emptying Recycle Bin..." -ForegroundColor Yellow
+    # 6. Empty Recycle Bin
+    Write-Host "[3/5] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-    # 6. Disk Cleanup (Using the imported Sageset settings)
-    Write-Host "[3/5] Running Disk Cleanup..." -ForegroundColor Yellow
+    # 7. Disk Cleanup (cleanmgr.exe)
+    Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+    # -Wait ensures the script stays open until cleanmgr finishes
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
-    # 7. DISM Optimization
-    Write-Host "[4/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    # 8. Component Store Cleanup (DISM)
+    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
-    Write-Host "`nSUCCESS: System Cleanup Completed!" -ForegroundColor Green
+    Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
+    Write-Host " SUCCESS: Cleanup process finished successfully!" -ForegroundColor Green
+    Write-Host "----------------------------------------------------------" -ForegroundColor Green
 
 } catch {
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
     Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
-    Write-Error "Check $LogDir\SystemCleanUpErrors.log for details."
+    Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
 }
 
 Write-Host "Closing in 5 seconds..."
