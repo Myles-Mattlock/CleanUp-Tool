@@ -84,6 +84,20 @@ try {
     Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
+    # 9. Trigger Storage Sense
+    Write-Host "[6/6] Triggering Storage Sense Cleanup..." -ForegroundColor Yellow
+    
+    # Ensure Storage Sense is enabled in the registry (so the task actually does something)
+    $SSPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy"
+    if (!(Test-Path $SSPath)) { New-Item -Path $SSPath -Force | Out-Null }
+    Set-ItemProperty -Path $SSPath -Name "01" -Value 1 -Type DWord # 01 = Master Switch (On)
+
+    # Force the background task to run now
+    Start-ScheduledTask -TaskName "\Microsoft\Windows\DiskFootprint\StorageSense" -ErrorAction SilentlyContinue
+    
+    # Storage Sense runs as a background process, so we'll give it a moment to initialize
+    Start-Sleep -Seconds 3
+
     # --- FINAL CALCULATION ---
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $EndingFreeSpace = $DriveEnd.FreeSpace
