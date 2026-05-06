@@ -30,6 +30,7 @@ if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | 
 
 Write-Host "--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
+Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
 # 3. Import Sageset Registry Settings
 Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
