@@ -17,7 +17,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "v2.0.0-Beta.1"  # Update this for each GitHub release
+$CurrentVersion = "v1.0.0"  # Format: v1.0.0 or v1.1.0-beta
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
@@ -27,23 +27,38 @@ $LogDir = "C:\Logs"
 function Check-ForUpdates {
     Write-Host "Checking for updates..." -ForegroundColor Gray
     try {
-        $UpdateUrl = "https://api.github.com/repos/$RepoName/releases/latest"
-        # We use -UseBasicParsing to ensure compatibility across different PowerShell versions
-        $JSON = Invoke-RestMethod -Uri $UpdateUrl -ErrorAction Stop
-        $LatestVersion = $JSON.tag_name
-        $DownloadUrl = $JSON.html_url
+        # Fetch all releases to include pre-releases/betas
+        $AllReleasesUrl = "https://api.github.com/repos/$RepoName/releases"
+        $Releases = Invoke-RestMethod -Uri $AllReleasesUrl -ErrorAction Stop
+        
+        # Convert local version string to a comparable object (removes 'v' prefix)
+        $CurrentVerObj = [System.Management.Automation.SemanticVersion]($CurrentVersion.TrimStart('v'))
+        
+        # Sort GitHub releases by version and find the single newest one
+        $LatestRelease = $Releases | ForEach-Object {
+            try {
+                [PSCustomObject]@{
+                    Version = [System.Management.Automation.SemanticVersion]($_.tag_name.TrimStart('v'))
+                    Url     = $_.html_url
+                    Tag     = $_.tag_name
+                    IsBeta  = $_.prerelease
+                }
+            } catch { $null } # Skip tags that aren't valid version numbers
+        } | Sort-Object Version -Descending | Select-Object -First 1
 
-        if ($LatestVersion -ne $CurrentVersion) {
+        # Intelligent Comparison
+        if ($LatestRelease -and ($LatestRelease.Version -gt $CurrentVerObj)) {
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            Write-Host " [!] A NEW VERSION IS AVAILABLE: $LatestVersion" -ForegroundColor White -BackgroundColor Blue
+            $StatusType = if ($LatestRelease.IsBeta) { "BETA UPDATE" } else { "UPDATE" }
+            Write-Host " [!] NEW $StatusType AVAILABLE: $($LatestRelease.Tag)" -ForegroundColor White -BackgroundColor Blue
             Write-Host " You are currently running: $CurrentVersion" -ForegroundColor Gray
-            Write-Host " Download the update at: $DownloadUrl" -ForegroundColor Cyan
+            Write-Host " Download here: $($LatestRelease.Url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
         } else {
-            Write-Host " You are running the latest version." -ForegroundColor DarkGreen
+            Write-Host " You are running the latest version ($CurrentVersion)." -ForegroundColor DarkGreen
         }
     } catch {
-        Write-Host " Could not reach GitHub to check for updates." -ForegroundColor DarkGray
+        Write-Host " Note: Could not reach GitHub to check for updates." -ForegroundColor DarkGray
     }
 }
 
