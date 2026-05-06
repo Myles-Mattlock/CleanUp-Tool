@@ -33,7 +33,7 @@ Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
 Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
 # 3. Import Sageset Registry Settings
-Write-Host "`n[1/6] Importing Cleanup Configurations..." -ForegroundColor Yellow
+Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
@@ -62,7 +62,7 @@ $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
 try {
     # 5. Manual Folder Cleanup
-    Write-Host "`n[2/6] Clearing temporary files..." -ForegroundColor Yellow
+    Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
@@ -74,16 +74,16 @@ try {
     }
 
     # 6. Empty Recycle Bin
-    Write-Host "[3/6] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Write-Host "[3/5] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
     # 7. Disk Cleanup (cleanmgr.exe)
-    Write-Host "[4/6] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
     # 8. Component Store Cleanup (DISM)
-    Write-Host "[5/6] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
     # --- STOP TIMER ---
