@@ -17,9 +17,35 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
+$CurrentVersion = "v2.0.0-Beta.1"  # Update this for each GitHub release
+$RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
 # ---------------------
+
+# --- UPDATE CHECKER ---
+function Check-ForUpdates {
+    Write-Host "Checking for updates..." -ForegroundColor Gray
+    try {
+        $UpdateUrl = "https://api.github.com/repos/$RepoName/releases/latest"
+        # We use -UseBasicParsing to ensure compatibility across different PowerShell versions
+        $JSON = Invoke-RestMethod -Uri $UpdateUrl -ErrorAction Stop
+        $LatestVersion = $JSON.tag_name
+        $DownloadUrl = $JSON.html_url
+
+        if ($LatestVersion -ne $CurrentVersion) {
+            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+            Write-Host " [!] A NEW VERSION IS AVAILABLE: $LatestVersion" -ForegroundColor White -BackgroundColor Blue
+            Write-Host " You are currently running: $CurrentVersion" -ForegroundColor Gray
+            Write-Host " Download the update at: $DownloadUrl" -ForegroundColor Cyan
+            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+        } else {
+            Write-Host " You are running the latest version." -ForegroundColor DarkGreen
+        }
+    } catch {
+        Write-Host " Could not reach GitHub to check for updates." -ForegroundColor DarkGray
+    }
+}
 
 # Capture Starting Disk Space
 $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
@@ -28,9 +54,12 @@ $StartingFreeSpace = $Drive.FreeSpace
 # Ensure Log directory exists
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 
-Write-Host "--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
+Write-Host "`n--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
 Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
+
+# Run the update check
+Check-ForUpdates
 
 # 3. Import Sageset Registry Settings
 Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
