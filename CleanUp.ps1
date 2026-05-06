@@ -30,7 +30,6 @@ if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | 
 
 Write-Host "--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
-Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
 # 3. Import Sageset Registry Settings
 Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
@@ -58,7 +57,7 @@ if ($Confirmation -notmatch "y|yes") {
 }
 
 try {
-    # 5. Manual Folder Cleanup (Verbose to show files)
+    # 5. Manual Folder Cleanup
     Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
@@ -68,8 +67,7 @@ try {
     )
 
     foreach ($Path in $TargetFolders) {
-        # -Verbose will show the names of files being deleted in the console
-        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue -Verbose
+        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 6. Empty Recycle Bin
