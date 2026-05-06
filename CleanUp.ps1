@@ -57,6 +57,9 @@ if ($Confirmation -notmatch "y|yes") {
     Exit
 }
 
+# --- START TIMER ---
+$CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
+
 try {
     # 5. Manual Folder Cleanup
     Write-Host "`n[2/6] Clearing temporary files..." -ForegroundColor Yellow
@@ -83,6 +86,11 @@ try {
     Write-Host "[5/6] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
+    # --- STOP TIMER ---
+    $CleanupTimer.Stop()
+    $TimeSpan = $CleanupTimer.Elapsed
+    $FormattedTime = "{0:mm} min {0:ss} sec" -f $TimeSpan
+
     # --- FINAL CALCULATION ---
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $EndingFreeSpace = $DriveEnd.FreeSpace
@@ -100,9 +108,11 @@ try {
     Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
     Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
     Write-Host " TOTAL STORAGE RECLAIMED: $ReadableSpace" -ForegroundColor White -BackgroundColor DarkGreen
+    Write-Host " TIME ELAPSED: $FormattedTime" -ForegroundColor White
     Write-Host "----------------------------------------------------------" -ForegroundColor Green
 
 } catch {
+    $CleanupTimer.Stop()
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
     Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
