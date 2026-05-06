@@ -8,13 +8,12 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Exit
 }
 
-# 2. Robust Path Logic (Fixes the EXE empty string error)
+# 2. Robust Path Logic
 if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
     $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 } else {
     $CurrentDir = $PSScriptRoot
 }
-# Fallback if running in a weird shell environment
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
@@ -22,11 +21,16 @@ $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg")
 $LogDir = "C:\Logs"
 # ---------------------
 
+# Capture Starting Disk Space
+$Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+$StartingFreeSpace = $Drive.FreeSpace
+
 # Ensure Log directory exists
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 
 Write-Host "--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
+Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
 # 3. Import Sageset Registry Settings
 Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
@@ -54,7 +58,7 @@ if ($Confirmation -notmatch "y|yes") {
 }
 
 try {
-    # 5. Manual Folder Cleanup
+    # 5. Manual Folder Cleanup (Verbose to show files)
     Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
@@ -64,7 +68,8 @@ try {
     )
 
     foreach ($Path in $TargetFolders) {
-        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # -Verbose will show the names of files being deleted in the console
+        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue -Verbose
     }
 
     # 6. Empty Recycle Bin
@@ -74,15 +79,27 @@ try {
     # 7. Disk Cleanup (cleanmgr.exe)
     Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-    # -Wait ensures the script stays open until cleanmgr finishes
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
     # 8. Component Store Cleanup (DISM)
     Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
+    # --- FINAL CALCULATION ---
+    $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+    $EndingFreeSpace = $DriveEnd.FreeSpace
+    $SpaceSavedBytes = $EndingFreeSpace - $StartingFreeSpace
+
+    # Format output (MB or GB)
+    if ($SpaceSavedBytes -gt 1GB) {
+        $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
+    } else {
+        $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
+    }
+
     Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
-    Write-Host " SUCCESS: Cleanup process finished successfully!" -ForegroundColor Green
+    Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
+    Write-Host " TOTAL STORAGE RECLAIMED: $ReadableSpace" -ForegroundColor White -BackgroundColor DarkGreen
     Write-Host "----------------------------------------------------------" -ForegroundColor Green
 
 } catch {
@@ -91,5 +108,5 @@ try {
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
 }
 
-Write-Host "Closing in 5 seconds..."
-Start-Sleep -Seconds 5
+Write-Host "Closing in 10 seconds..."
+Start-Sleep -Seconds 10
