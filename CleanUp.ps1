@@ -33,7 +33,7 @@ Write-Host "Running from: $CurrentDir" -ForegroundColor Gray
 Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
 # 3. Import Sageset Registry Settings
-Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
@@ -59,52 +59,47 @@ if ($Confirmation -notmatch "y|yes") {
 
 try {
     # 5. Manual Folder Cleanup
-    Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
+    Write-Host "`n[2/6] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
-
     foreach ($Path in $TargetFolders) {
         Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 6. Empty Recycle Bin
-    Write-Host "[3/5] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Write-Host "[3/6] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
     # 7. Disk Cleanup (cleanmgr.exe)
-    Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[4/6] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
     # 8. Component Store Cleanup (DISM)
-    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    Write-Host "[5/6] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
     # 9. Trigger Storage Sense
-    Write-Host "[6/6] Triggering Storage Sense Cleanup..." -ForegroundColor Yellow
-    
-    # Ensure Storage Sense is enabled in the registry (so the task actually does something)
+    Write-Host "[6/6] Triggering Storage Sense..." -ForegroundColor Yellow
     $SSPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy"
     if (!(Test-Path $SSPath)) { New-Item -Path $SSPath -Force | Out-Null }
-    Set-ItemProperty -Path $SSPath -Name "01" -Value 1 -Type DWord # 01 = Master Switch (On)
-
-    # Force the background task to run now
+    Set-ItemProperty -Path $SSPath -Name "01" -Value 1 -Type DWord 
     Start-ScheduledTask -TaskName "\Microsoft\Windows\DiskFootprint\StorageSense" -ErrorAction SilentlyContinue
-    
-    # Storage Sense runs as a background process, so we'll give it a moment to initialize
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 2
 
     # --- FINAL CALCULATION ---
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $EndingFreeSpace = $DriveEnd.FreeSpace
     $SpaceSavedBytes = $EndingFreeSpace - $StartingFreeSpace
 
-    # Format output (MB or GB)
-    if ($SpaceSavedBytes -gt 1GB) {
+    # Check for negative value (background noise)
+    if ($SpaceSavedBytes -le 0) {
+        $ReadableSpace = "0 MB"
+    } elseif ($SpaceSavedBytes -gt 1GB) {
         $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
     } else {
         $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
