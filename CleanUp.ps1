@@ -83,14 +83,6 @@ try {
     Write-Host "[5/6] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
-    # 9. Trigger Storage Sense
-    Write-Host "[6/6] Triggering Storage Sense..." -ForegroundColor Yellow
-    $SSPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy"
-    if (!(Test-Path $SSPath)) { New-Item -Path $SSPath -Force | Out-Null }
-    Set-ItemProperty -Path $SSPath -Name "01" -Value 1 -Type DWord 
-    Start-ScheduledTask -TaskName "\Microsoft\Windows\DiskFootprint\StorageSense" -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
-
     # --- FINAL CALCULATION ---
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $EndingFreeSpace = $DriveEnd.FreeSpace
@@ -116,5 +108,6 @@ try {
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
 }
 
-Write-Host "Closing in 10 seconds..."
-Start-Sleep -Seconds 10
+Write-Host "Press any key to exit..."
+$null = [Console]::ReadKey($true)
+Exit
