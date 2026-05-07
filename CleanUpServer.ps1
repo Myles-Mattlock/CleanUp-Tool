@@ -17,7 +17,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0" 
+$CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
@@ -30,54 +30,31 @@ function Check-ForUpdates {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
         $Url = "https://api.github.com/repos/$RepoName/releases"
-
         $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
         $LocalTag = $CurrentVersion.ToLower().TrimStart('v')
         $LocalVersionBase = [version]($LocalTag.Split("-")[0])
         $UpdateFound = $null
-
         foreach ($Rel in $Releases) {
             $RemoteTag = $Rel.tag_name.ToLower().TrimStart('v')
             $RemoteVersionBase = [version]($RemoteTag.Split("-")[0])
-
-            if ($RemoteVersionBase -gt $LocalVersionBase) {
-                $UpdateFound = $Rel
-                break 
-            }
-            if ($RemoteVersionBase -eq $LocalVersionBase -and $RemoteTag -ne $LocalTag) {
-                if ($RemoteTag.Length -lt $LocalTag.Length -or $RemoteTag -gt $LocalTag) {
-                    $UpdateFound = $Rel
-                    break
-                }
-            }
+            if ($RemoteVersionBase -gt $LocalVersionBase) { $UpdateFound = $Rel; break }
         }
-
         if ($UpdateFound) {
-            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            $Label = if ($UpdateFound.prerelease) { "BETA UPDATE" } else { "STABLE UPDATE" }
-            Write-Host " [!] NEW $Label AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
-            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
-            Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
-            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-        } else {
-            Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
+            Write-Host " [!] NEW UPDATE AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
         }
     } catch {
-        Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
+        Write-Host " Note: Update check skipped." -ForegroundColor DarkGray
     }
 }
 
 # Capture Starting Disk Space
 $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $StartingFreeSpace = $Drive.FreeSpace
-
-# Ensure Log directory exists
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 
 Write-Host "`n--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
 
-# Run the update check
 Check-ForUpdates
 
 # 3. Import Sageset Registry Settings
@@ -85,46 +62,50 @@ Write-Host "`n[0/3] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
-        $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
-        if ($proc.ExitCode -eq 0) {
-            Write-Host "  > Successfully applied: $File" -ForegroundColor Gray
-        } else {
-            Write-Warning "  > Failed to apply $File (Code: $($proc.ExitCode))"
-        }
-    } else {
-        Write-Warning "  > Registry file not found: $FilePath"
+        Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -WindowStyle Hidden
     }
 }
 
 # 4. User Confirmation
 Write-Host ""
 $Confirmation = Read-Host "Begin system cleanup? (Y/N)"
-if ($Confirmation -notmatch "y|yes") {
-    Write-Host "Operation cancelled." -ForegroundColor Red
-    Start-Sleep -Seconds 2
-    Exit
-}
+if ($Confirmation -notmatch "y|yes") { Exit }
 
 # --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    Write-Host "`n[1/3] Clearing temporary files and folders..." -ForegroundColor Yellow
+    Write-Host "`n[1/3] Clearing temporary files and system folders..." -ForegroundColor Yellow
     
-    # List of directories to clean
-    # Note: Removing \* from the end of Intel and PerfLogs so the FOLDER itself is deleted
-    $TargetFolders = @(
+    # 1. Folders where we only want to empty the CONTENTS
+    $ContentOnly = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
-        "C:\Intel",                           # Folder will be deleted
-        "C:\PerfLogs",                        # Folder will be deleted
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
 
-    foreach ($Path in $TargetFolders) {
+    # 2. Folders we want to DELETE ENTIRELY
+    $FullDelete = @(
+        "C:\Intel",
+        "C:\PerfLogs"
+    )
+
+    # Process Content Only
+    foreach ($Path in $ContentOnly) {
         if (Test-Path $Path) {
-            Write-Host "  > Removing: $Path" -ForegroundColor Gray
             Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # Process Full Folder Deletion (with permission takeover)
+    foreach ($Folder in $FullDelete) {
+        if (Test-Path $Folder) {
+            Write-Host "  > Force removing: $Folder" -ForegroundColor Gray
+            # Take ownership and grant full control to bypass "Access Denied"
+            takeown /f "$Folder" /r /d y > $null
+            icacls "$Folder" /grant administrators:F /t /q > $null
+            # Remove the folder
+            Remove-Item $Folder -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -137,17 +118,9 @@ try {
 
     $CleanupTimer.Stop()
     
-    # Calculate Savings
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
-    
-    $ReadableSpace = if ($SpaceSavedBytes -le 0) {
-        "0 MB"
-    } elseif ($SpaceSavedBytes -gt 1GB) {
-        "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
-    } else {
-        "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
-    }
+    $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
     Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
     Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
@@ -157,9 +130,7 @@ try {
 
 } catch {
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
-    if ($null -ne $LogDir) {
-        Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
-    }
+    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
 }
 
