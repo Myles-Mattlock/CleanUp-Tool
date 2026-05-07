@@ -17,45 +17,34 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0-beta" # Use format: 2.0.0 or 2.0.0-beta
+$CurrentVersion = "2.0.0" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
 # ---------------------
 
-# --- UPDATE CHECKER (BETA + EXE COMPATIBLE) ---
+# --- UPDATE CHECKER ---
 function Check-ForUpdates {
     Write-Host "Checking for updates..." -ForegroundColor Gray
     try {
-        # Force TLS 1.2 for GitHub API compatibility in .exe
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        
         $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
         $Url = "https://api.github.com/repos/$RepoName/releases"
 
-        # Fetch Releases
         $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
-        
-        # 1. Parse local version
         $LocalTag = $CurrentVersion.ToLower().TrimStart('v')
         $LocalVersionBase = [version]($LocalTag.Split("-")[0])
-        
         $UpdateFound = $null
 
         foreach ($Rel in $Releases) {
             $RemoteTag = $Rel.tag_name.ToLower().TrimStart('v')
             $RemoteVersionBase = [version]($RemoteTag.Split("-")[0])
 
-            # Logic A: Remote version number is strictly higher (e.g., 2.1.0 > 2.0.0)
             if ($RemoteVersionBase -gt $LocalVersionBase) {
                 $UpdateFound = $Rel
                 break 
             }
-
-            # Logic B: Versions match, but tags differ (e.g., 2.0.0 Stable vs 2.0.0-beta)
             if ($RemoteVersionBase -eq $LocalVersionBase -and $RemoteTag -ne $LocalTag) {
-                # Simple string check: If remote tag is 'longer' or different, flag it
-                # Usually, '2.0.0' (Remote) is considered 'greater' than '2.0.0-beta' (Local)
                 if ($RemoteTag.Length -lt $LocalTag.Length -or $RemoteTag -gt $LocalTag) {
                     $UpdateFound = $Rel
                     break
@@ -120,14 +109,22 @@ if ($Confirmation -notmatch "y|yes") {
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     Write-Host "`n[1/3] Clearing temporary files..." -ForegroundColor Yellow
+    
+    # List of directories to empty
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
+        "C:\Intel\*",
+        "C:\Prefetch\*",
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
+
     foreach ($Path in $TargetFolders) {
-        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $Path) {
+            Write-Host "  > Cleaning: $Path" -ForegroundColor Gray
+            Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
     Write-Host "[2/3] Emptying Recycle Bin..." -ForegroundColor Yellow
@@ -138,6 +135,8 @@ try {
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
     $CleanupTimer.Stop()
+    
+    # Calculate Savings
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
     
@@ -157,7 +156,9 @@ try {
 
 } catch {
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
-    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
+    if ($null -ne $LogDir) {
+        Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
+    }
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
 }
 
