@@ -64,7 +64,7 @@ jobs:
 
     - name: Convert PowerShell script to executable (System CleanUp)
       run: |
-        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'SystemCleanUp/System CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'SystemCleanUp/System CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
       shell: pwsh
 
     - name: Run mt.exe to embed manifest (System CleanUp)
@@ -145,7 +145,7 @@ jobs:
 
     - name: Convert PowerShell script to executable (Server CleanUp)
       run: |
-        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'ServerCleanUp/Server CleanUp.exe' -IconFile Refresh.ico -version '1.3'"
+        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'ServerCleanUp/Server CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
       shell: pwsh
 
     - name: Run mt.exe to embed manifest (Server CleanUp)
