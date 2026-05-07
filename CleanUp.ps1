@@ -17,7 +17,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "v2.0.0-Beta.2"  # Format: v1.0.0 or v1.1.0-beta
+$CurrentVersion = "v1.3.0"  # Match your GitHub tag
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
@@ -27,18 +27,18 @@ $LogDir = "C:\Logs"
 function Check-ForUpdates {
     Write-Host "Checking for updates..." -ForegroundColor Gray
     try {
-        # CRITICAL FOR .EXE: Force TLS 1.2 and set a User-Agent
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-CleanupTool"
+        # FORCE MODERN SECURITY PROTOCOLS (Essential for .exe)
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+        
+        # USE A BROWSER-LIKE USER AGENT (GitHub API blocks empty or suspicious agents)
+        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        $Url = "https://api.github.com/repos/$RepoName/releases"
 
-        # Fetch all releases to include pre-releases/betas
-        $AllReleasesUrl = "https://api.github.com/repos/$RepoName/releases"
-        $Releases = Invoke-RestMethod -Uri $AllReleasesUrl -Method Get -UserAgent $UserAgent -ErrorAction Stop
+        # ATTEMPT FETCH
+        $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
         
-        # Convert local version string to a comparable object (removes 'v' prefix)
+        # VERSION LOGIC
         $CurrentVerObj = [System.Management.Automation.SemanticVersion]($CurrentVersion.TrimStart('v'))
-        
-        # Sort GitHub releases by version and find the single newest one
         $LatestRelease = $Releases | ForEach-Object {
             try {
                 [PSCustomObject]@{
@@ -47,22 +47,23 @@ function Check-ForUpdates {
                     Tag     = $_.tag_name
                     IsBeta  = $_.prerelease
                 }
-            } catch { $null } # Skip tags that aren't valid version numbers
+            } catch { $null }
         } | Sort-Object Version -Descending | Select-Object -First 1
 
-        # Intelligent Comparison
         if ($LatestRelease -and ($LatestRelease.Version -gt $CurrentVerObj)) {
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            $StatusType = if ($LatestRelease.IsBeta) { "BETA UPDATE" } else { "UPDATE" }
-            Write-Host " [!] NEW $StatusType AVAILABLE: $($LatestRelease.Tag)" -ForegroundColor White -BackgroundColor Blue
+            $Status = if ($LatestRelease.IsBeta) { "BETA UPDATE" } else { "UPDATE" }
+            Write-Host " [!] NEW $Status AVAILABLE: $($LatestRelease.Tag)" -ForegroundColor White -BackgroundColor Blue
             Write-Host " You are currently running: $CurrentVersion" -ForegroundColor Gray
-            Write-Host " Download here: $($LatestRelease.Url)" -ForegroundColor Cyan
+            Write-Host " Download: $($LatestRelease.Url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
         } else {
             Write-Host " You are running the latest version ($CurrentVersion)." -ForegroundColor DarkGreen
         }
     } catch {
-        Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
+        # Debug info for you:
+        Write-Host " Note: Update check skipped. GitHub unreachable." -ForegroundColor DarkGray
+        # Write-Host " Error Detail: $($_.Exception.Message)" -ForegroundColor DarkGray # Uncomment this to see exactly why it fails
     }
 }
 
@@ -105,62 +106,34 @@ if ($Confirmation -notmatch "y|yes") {
     Exit
 }
 
-# --- START TIMER ---
+# --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
-
 try {
-    # 5. Manual Folder Cleanup
     Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
-    $TargetFolders = @(
-        "C:\Windows\Temp\*",
-        "C:\Windows\Prefetch\*",
-        "C:\Windows\SoftwareDistribution\Download\*",
-        "$([System.IO.Path]::GetTempPath())*"
-    )
-    foreach ($Path in $TargetFolders) {
-        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    $TargetFolders = @("C:\Windows\Temp\*", "C:\Windows\Prefetch\*", "C:\Windows\SoftwareDistribution\Download\*", "$([System.IO.Path]::GetTempPath())*")
+    foreach ($Path in $TargetFolders) { Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue }
 
-    # 6. Empty Recycle Bin
     Write-Host "[3/5] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-    # 7. Disk Cleanup (cleanmgr.exe)
     Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
-    # 8. Component Store Cleanup (DISM)
     Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
-    # --- STOP TIMER ---
     $CleanupTimer.Stop()
-    $TimeSpan = $CleanupTimer.Elapsed
-    $FormattedTime = "{0:mm} min {0:ss} sec" -f $TimeSpan
-
-    # --- FINAL CALCULATION ---
     $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-    $EndingFreeSpace = $DriveEnd.FreeSpace
-    $SpaceSavedBytes = $EndingFreeSpace - $StartingFreeSpace
-
-    # Check for negative value (background noise)
-    if ($SpaceSavedBytes -le 0) {
-        $ReadableSpace = "0 MB"
-    } elseif ($SpaceSavedBytes -gt 1GB) {
-        $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
-    } else {
-        $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
-    }
+    $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
+    $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
     Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
     Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
     Write-Host " TOTAL STORAGE RECLAIMED: $ReadableSpace" -ForegroundColor White -BackgroundColor DarkGreen
-    Write-Host " TIME ELAPSED: $FormattedTime" -ForegroundColor White
+    Write-Host " TIME ELAPSED: $("v{0:mm} min {0:ss} sec" -f $CleanupTimer.Elapsed)" -ForegroundColor White
     Write-Host "----------------------------------------------------------" -ForegroundColor Green
-
 } catch {
-    $CleanupTimer.Stop()
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
     Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
     Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
