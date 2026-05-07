@@ -115,7 +115,7 @@ try {
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
         "C:\Intel\*",
-        "C:\Prefetch\*",
+        "C:\PerfLogs\*",
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
