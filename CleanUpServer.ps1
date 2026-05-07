@@ -108,21 +108,22 @@ if ($Confirmation -notmatch "y|yes") {
 # --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    Write-Host "`n[1/3] Clearing temporary files..." -ForegroundColor Yellow
+    Write-Host "`n[1/3] Clearing temporary files and folders..." -ForegroundColor Yellow
     
-    # List of directories to empty
+    # List of directories to clean
+    # Note: Removing \* from the end of Intel and PerfLogs so the FOLDER itself is deleted
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
-        "C:\Intel\*",
-        "C:\PerfLogs\*",
+        "C:\Intel",                           # Folder will be deleted
+        "C:\PerfLogs",                        # Folder will be deleted
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*"
     )
 
     foreach ($Path in $TargetFolders) {
         if (Test-Path $Path) {
-            Write-Host "  > Cleaning: $Path" -ForegroundColor Gray
+            Write-Host "  > Removing: $Path" -ForegroundColor Gray
             Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
