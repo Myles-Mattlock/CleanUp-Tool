@@ -84,6 +84,21 @@ Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB
 
 # Run the update check
 Check-ForUpdates
+# 3. Import Sageset Registry Settings
+Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
+foreach ($File in $RegFiles) {
+    $FilePath = Join-Path $CurrentDir $File
+    if (Test-Path $FilePath) {
+        $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
+        if ($proc.ExitCode -eq 0) {
+            Write-Host "  > Successfully applied: $File" -ForegroundColor Gray
+        } else {
+            Write-Warning "  > Failed to apply $File (Code: $($proc.ExitCode))"
+        }
+    } else {
+        Write-Warning "  > Registry file not found: $FilePath"
+    }
+}
 
 # 4. User Confirmation
 Write-Host ""
