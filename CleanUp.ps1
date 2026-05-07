@@ -17,7 +17,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "v2.0.0-Beta.2"  # Format: v1.0.0 or v1.1.0-beta
+$CurrentVersion = "v1.0.0"  # Format: v1.0.0 or v1.1.0-beta
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
@@ -27,9 +27,13 @@ $LogDir = "C:\Logs"
 function Check-ForUpdates {
     Write-Host "Checking for updates..." -ForegroundColor Gray
     try {
+        # CRITICAL FOR .EXE: Force TLS 1.2 and set a User-Agent
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-CleanupTool"
+
         # Fetch all releases to include pre-releases/betas
         $AllReleasesUrl = "https://api.github.com/repos/$RepoName/releases"
-        $Releases = Invoke-RestMethod -Uri $AllReleasesUrl -ErrorAction Stop
+        $Releases = Invoke-RestMethod -Uri $AllReleasesUrl -Method Get -UserAgent $UserAgent -ErrorAction Stop
         
         # Convert local version string to a comparable object (removes 'v' prefix)
         $CurrentVerObj = [System.Management.Automation.SemanticVersion]($CurrentVersion.TrimStart('v'))
@@ -58,7 +62,7 @@ function Check-ForUpdates {
             Write-Host " You are running the latest version ($CurrentVersion)." -ForegroundColor DarkGreen
         }
     } catch {
-        Write-Host " Note: Could not reach GitHub to check for updates." -ForegroundColor DarkGray
+        Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
     }
 }
 
