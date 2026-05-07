@@ -71,7 +71,7 @@ function Check-ForUpdates {
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
         } else {
-            Write-Host " You are running the latest version. currently running: v$CurrentVersion" -ForegroundColor DarkGreen
+            Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
         }
     } catch {
         Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
@@ -92,7 +92,7 @@ Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB
 Check-ForUpdates
 
 # 3. Import Sageset Registry Settings
-Write-Host "`n[1/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
+Write-Host "`n[0/4] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
@@ -119,7 +119,7 @@ if ($Confirmation -notmatch "y|yes") {
 # --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    Write-Host "`n[2/5] Clearing temporary files..." -ForegroundColor Yellow
+    Write-Host "`n[1/4] Clearing temporary files..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
@@ -130,14 +130,14 @@ try {
         Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[3/5] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-    Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[3/4] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
-    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    Write-Host "[4/4] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
     $CleanupTimer.Stop()
