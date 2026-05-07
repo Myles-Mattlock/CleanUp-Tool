@@ -114,8 +114,8 @@ try {
         "C:\Windows\Prefetch\*",
         "C:\Windows\SoftwareDistribution\Download\*",
         "$([System.IO.Path]::GetTempPath())*",
-        "C:\Intel\*",
-        "C:\PerfLogs\*"
+        "C:\Intel",
+        "C:\PerfLogs"
     )
     
     foreach ($Path in $TargetFolders) {
