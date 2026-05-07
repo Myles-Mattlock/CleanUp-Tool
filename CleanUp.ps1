@@ -67,12 +67,12 @@ function Check-ForUpdates {
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
             $Label = if ($UpdateFound.prerelease) { "BETA UPDATE" } else { "STABLE UPDATE" }
             Write-Host " [!] NEW $Label AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
-            Write-Host " You are currently running: $CurrentVersion" -ForegroundColor Gray
+            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
         } else {
             Write-Host " You are running the latest version." -ForegroundColor DarkGreen
-            Write-Host " You are currently running: $CurrentVersion" -ForegroundColor Gray
+            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
         }
     } catch {
         Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
