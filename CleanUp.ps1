@@ -71,8 +71,7 @@ function Check-ForUpdates {
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
         } else {
-            Write-Host " You are running the latest version." -ForegroundColor DarkGreen
-            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
+            Write-Host " You are running the latest version. currently running: v$CurrentVersion" -ForegroundColor DarkGreen
         }
     } catch {
         Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
