@@ -8,6 +8,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Exit
 }
 
+# Load GUI Assemblies
+Add-Type -AssemblyName System.Windows.Forms
+
 # 2. Robust Path Logic
 if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
     $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
@@ -59,6 +62,10 @@ function Check-ForUpdates {
             Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+            
+            # Optional: Ask to open browser via Pop-up
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available. Open download page?", "Update Available", "YesNo", "Information")
+            if ($UpdateChoice -eq "Yes") { Start-Process $UpdateFound.html_url }
         } else {
             Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
         }
@@ -96,11 +103,17 @@ foreach ($File in $RegFiles) {
     }
 }
 
-# 4. User Confirmation
-Write-Host ""
-$Confirmation = Read-Host "Begin system cleanup? (Y/N)"
-if ($Confirmation -notmatch "y|yes") {
-    Write-Host "Operation cancelled." -ForegroundColor Red
+# 4. User Confirmation (POP-UP MODIFICATION)
+$PopTitle = "CleanUp Tool Confirmation"
+$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization."
+$PopButtons = [System.Windows.Forms.MessageBoxButtons]::YesNo
+$PopIcon = [System.Windows.Forms.MessageBoxIcon]::Question
+
+# We use 'ServiceNotification' to ensure the pop-up appears on top of all windows
+$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, $PopButtons, $PopIcon, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+
+if ($Result -eq "No") {
+    Write-Host "`nOperation cancelled by user." -ForegroundColor Red
     Start-Sleep -Seconds 2
     Exit
 }
