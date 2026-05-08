@@ -1,20 +1,3 @@
-$code = @'
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern IntPtr GetStdHandle(int nStdHandle);
-
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-'@
-
-$type = Add-Type -MemberDefinition $code -Name "Win32Utils" -Namespace "Native" -PassThru
-$hFull = $type::GetStdHandle(-10) # STD_INPUT_HANDLE
-$mode = 0
-$type::GetConsoleMode($hFull, [ref]$mode)
-$type::SetConsoleMode($hFull, $mode -band -not 0x0040) # 0x0040 is the QuickEdit flag
-
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
@@ -41,6 +24,25 @@ $CurrentVersion = "2.0.0-beta"
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
+# ---------------------
+
+# --- disable click ---
+$code = @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern IntPtr GetStdHandle(int nStdHandle);
+
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+'@
+
+$type = Add-Type -MemberDefinition $code -Name "Win32Utils" -Namespace "Native" -PassThru
+$hFull = $type::GetStdHandle(-10) # STD_INPUT_HANDLE
+$mode = 0
+$type::GetConsoleMode($hFull, [ref]$mode)
+$type::SetConsoleMode($hFull, $mode -band -not 0x0040) # 0x0040 is the QuickEdit flag
 # ---------------------
 
 # --- UPDATE CHECKER ---
