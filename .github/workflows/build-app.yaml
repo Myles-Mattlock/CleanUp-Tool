@@ -23,7 +23,7 @@ jobs:
       shell: pwsh
 
     - name: Install Build Tools (mt.exe)
-      run: choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+      run: choco install visualstudio2026buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
       shell: pwsh
 
     # --- SYSTEM CLEANUP BUILD ---
