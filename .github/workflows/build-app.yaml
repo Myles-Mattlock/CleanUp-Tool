@@ -1,70 +1,103 @@
-name: Build and Package System CleanUp
+name: Build and Package CleanUp Suite
 
 on:
   push:
-    branches: [ main, dev ]
-    tags: [ 'v*.*.*' ]
+    branches:
+      - dev
+      - main
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
-  build:
+  build_all:
+    name: Build System and Server Versions
     runs-on: windows-2025
+
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Install ps2exe
       run: pwsh -Command "Install-Module -Name ps2exe -Force"
-
-    - name: Create Structure
-      run: |
-        # This is our workspace
-        New-Item -ItemType Directory -Path "BuildOutput" -Force
-        # This is the folder the installer will look for
-        New-Item -ItemType Directory -Path "BuildOutput\SystemCleanUp" -Force
-
-    - name: Compile Tool and Installer
-      run: |
-        # Compile the App INTO the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'BuildOutput\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
-        
-        # Compile the Installer OUTSIDE the subfolder
-        pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'BuildOutput\Setup.exe' -IconFile icon.ico -version '1.0.0'"
       shell: pwsh
 
-    - name: Copy Assets
-      run: |
-        Copy-Item "*.reg" -Destination "BuildOutput\SystemCleanUp\" -ErrorAction SilentlyContinue
+    - name: Install Build Tools (mt.exe)
+      run: choco install visualstudio2022buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+      shell: pwsh
 
-    - name: Embed Admin Manifest
+    # --- SYSTEM CLEANUP BUILD ---
+    - name: Prepare System Staging
+      run: |
+        New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
+        # Compile Tool into the subfolder
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
+        # Compile Installer outside the subfolder
+        pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '1.0.0'"
+        # Copy Assets
+        Copy-Item "*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
+      shell: pwsh
+
+    # --- SERVER CLEANUP BUILD ---
+    - name: Prepare Server Staging
+      run: |
+        New-Item -ItemType Directory -Path "Staging_Server\ServerCleanUp" -Force
+        # Compile Tool into the subfolder
+        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'Staging_Server\ServerCleanUp\Server CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
+        # Compile Installer (Assuming you use the same installer script or a modified one)
+        pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_Server\Setup-Server.exe' -IconFile icon.ico -version '1.0.0'"
+      shell: pwsh
+
+    - name: Embed Admin Manifests
       run: |
         $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        # Both files need Admin to work in Program Files
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"BuildOutput\SystemCleanUp\System CleanUp.exe";#1
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"BuildOutput\Setup.exe";#1
+        # System Files
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\SystemCleanUp\System CleanUp.exe";#1
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\Setup.exe";#1
+        # Server Files
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\ServerCleanUp\Server CleanUp.exe";#1
+        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\Setup-Server.exe";#1
       shell: pwsh
 
-    - name: Zip Release
+    - name: Create ZIP Archives
       run: |
-        # Zip everything inside BuildOutput so Setup.exe is at the top level
-        Compress-Archive -Path "BuildOutput\*" -DestinationPath "SystemCleanUp_Package.zip"
+        Compress-Archive -Path "Staging_System\*" -DestinationPath "SystemCleanUp.zip"
+        Compress-Archive -Path "Staging_Server\*" -DestinationPath "ServerCleanUp.zip"
+      shell: pwsh
 
-    - name: Upload
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SystemCleanUp-Dist
-        path: SystemCleanUp_Package.zip
+        name: CleanUp-Executables
+        path: |
+          SystemCleanUp.zip
+          ServerCleanUp.zip
 
   create_release:
-    needs: build
-    if: github.ref_type == 'tag'
+    name: Create Release
+    needs: build_all
+    # This runs if it's a tag OR if you push to main (Beta)
+    if: github.ref_type == 'tag' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
-    - name: Download
+    - name: Download Artifacts
       uses: actions/download-artifact@v4
-    - name: Release
+      with:
+        name: CleanUp-Executables
+
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: SystemCleanUp-Dist/SystemCleanUp_Package.zip
+        # If no tag exists (push to main), it uses a 'beta' tag name
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'beta-latest' }}
+        files: |
+          SystemCleanUp.zip
+          ServerCleanUp.zip
+        draft: false
+        # Mark as prerelease if it's not a formal version tag
+        prerelease: ${{ github.ref_type != 'tag' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
