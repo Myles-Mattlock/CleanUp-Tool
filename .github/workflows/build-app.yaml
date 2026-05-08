@@ -27,34 +27,42 @@ jobs:
       shell: pwsh
 
     # --- SYSTEM CLEANUP BUILD ---
+    # It now pulls .reg files from your 'SystemCleanUp' repo folder
     - name: Prepare System Staging
       run: |
         New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
+        
         # Compile Tool into the subfolder
         pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
+        
         # Compile Installer outside the subfolder
         pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '1.0.0'"
-        # Copy Assets
-        Copy-Item "*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
+        
+        # COPY REG FILES FROM REPO FOLDER TO STAGING
+        Copy-Item "SystemCleanUp\*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     # --- SERVER CLEANUP BUILD ---
+    # It now pulls .reg files from your 'ServerCleanUp' repo folder
     - name: Prepare Server Staging
       run: |
         New-Item -ItemType Directory -Path "Staging_Server\ServerCleanUp" -Force
+        
         # Compile Tool into the subfolder
         pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'Staging_Server\ServerCleanUp\Server CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
-        # Compile Installer (Assuming you use the same installer script or a modified one)
+        
+        # Compile Installer
         pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_Server\Setup-Server.exe' -IconFile icon.ico -version '1.0.0'"
+        
+        # COPY REG FILES FROM REPO FOLDER TO STAGING
+        Copy-Item "ServerCleanUp\*.reg" -Destination "Staging_Server\ServerCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests
       run: |
         $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        # System Files
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\SystemCleanUp\System CleanUp.exe";#1
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\Setup.exe";#1
-        # Server Files
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\ServerCleanUp\Server CleanUp.exe";#1
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\Setup-Server.exe";#1
       shell: pwsh
@@ -76,28 +84,23 @@ jobs:
   create_release:
     name: Create Release
     needs: build_all
-    # This runs if it's a tag OR if you push to main (Beta)
     if: github.ref_type == 'tag' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
     - name: Download Artifacts
       uses: actions/download-artifact@v4
       with:
         name: CleanUp-Executables
-
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        # If no tag exists (push to main), it uses a 'beta' tag name
         tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'beta-latest' }}
         files: |
           SystemCleanUp.zip
           ServerCleanUp.zip
         draft: false
-        # Mark as prerelease if it's not a formal version tag
         prerelease: ${{ github.ref_type != 'tag' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
