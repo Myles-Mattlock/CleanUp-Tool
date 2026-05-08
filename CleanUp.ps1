@@ -63,9 +63,17 @@ function Check-ForUpdates {
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
             
-            # Optional: Ask to open browser via Pop-up
-            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available. Open download page?", "Update Available", "YesNo", "Information")
-            if ($UpdateChoice -eq "Yes") { Start-Process $UpdateFound.html_url }
+            # ASK TO UPDATE: If Yes, open link and EXIT script.
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it and close this version?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+            
+            if ($UpdateChoice -eq "Yes") { 
+                Start-Process $UpdateFound.html_url
+                Write-Host "Redirecting to download page. Closing app..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+                Exit 
+            } else {
+                Write-Host " Continuing with current version..." -ForegroundColor Gray
+            }
         } else {
             Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
         }
@@ -103,13 +111,12 @@ foreach ($File in $RegFiles) {
     }
 }
 
-# 4. User Confirmation (POP-UP MODIFICATION)
+# 4. User Confirmation Pop-up
 $PopTitle = "CleanUp Tool Confirmation"
 $PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization."
 $PopButtons = [System.Windows.Forms.MessageBoxButtons]::YesNo
 $PopIcon = [System.Windows.Forms.MessageBoxIcon]::Question
 
-# We use 'ServiceNotification' to ensure the pop-up appears on top of all windows
 $Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, $PopButtons, $PopIcon, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
 
 if ($Result -eq "No") {
