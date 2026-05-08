@@ -5,7 +5,7 @@ $TargetPath      = Join-Path -Path $env:ProgramFiles -ChildPath $FolderName
 
 # Shortcut Settings
 $shortcutName    = "System CleanUp"
-$exeName         = "SystemCleanUp.exe" # Change this to the actual name of your app's EXE
+$exeName         = "SystemCleanUp.exe" # Ensure this matches your actual EXE filename
 $executablePath  = Join-Path -Path $TargetPath -ChildPath $exeName
 
 # --- Execution ---
@@ -45,7 +45,17 @@ catch {
     exit
 }
 
-# 4. Create Desktop Shortcut
+# 4. Unblock Files
+# This removes the "Mark of the Web" so the user isn't prompted with security warnings
+try {
+    Write-Host "Unblocking files to prevent security warnings..." -ForegroundColor Cyan
+    Get-ChildItem -Path $TargetPath -Recurse | Unblock-File
+}
+catch {
+    Write-Warning "Could not unblock some files, but installation will continue."
+}
+
+# 5. Create Desktop Shortcut
 try {
     Write-Host "Creating desktop shortcut..." -ForegroundColor Cyan
     $desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
@@ -54,7 +64,6 @@ try {
     $WshShell = New-Object -ComObject WScript.Shell
     $shortcut = $WshShell.CreateShortcut($shortcutPath)
     
-    # Pointing to the specific EXE inside the Program Files folder
     $shortcut.TargetPath = $executablePath
     $shortcut.WorkingDirectory = $TargetPath
     $shortcut.Description = "Clean up Windows using Myles' Tool"
@@ -63,7 +72,7 @@ try {
     Write-Host "Shortcut for '$shortcutName' created successfully on the desktop." -ForegroundColor Green
 }
 catch {
-    Write-Warning "Files copied, but failed to create shortcut: $($_.Exception.Message)"
+    Write-Warning "Files copied and unblocked, but failed to create shortcut: $($_.Exception.Message)"
 }
 
 Write-Host "Installation completed successfully!" -ForegroundColor Green
