@@ -27,7 +27,6 @@ jobs:
       shell: pwsh
 
     # --- SYSTEM CLEANUP BUILD ---
-    # It now pulls .reg files from your 'SystemCleanUp' repo folder
     - name: Prepare System Staging
       run: |
         New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
@@ -38,12 +37,11 @@ jobs:
         # Compile Installer outside the subfolder
         pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '1.0.0'"
         
-        # COPY REG FILES FROM REPO FOLDER TO STAGING
+        # Copy assets from your repository folder
         Copy-Item "SystemCleanUp\*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     # --- SERVER CLEANUP BUILD ---
-    # It now pulls .reg files from your 'ServerCleanUp' repo folder
     - name: Prepare Server Staging
       run: |
         New-Item -ItemType Directory -Path "Staging_Server\ServerCleanUp" -Force
@@ -54,13 +52,15 @@ jobs:
         # Compile Installer
         pwsh -Command "ps2exe -InputFile installer.ps1 -OutputFile 'Staging_Server\Setup-Server.exe' -IconFile icon.ico -version '1.0.0'"
         
-        # COPY REG FILES FROM REPO FOLDER TO STAGING
+        # Copy assets from your repository folder
         Copy-Item "ServerCleanUp\*.reg" -Destination "Staging_Server\ServerCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests
       run: |
         $mtPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\*\bin\*\x64\mt.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+        
+        # Embed manifest in all EXEs to ensure they run as Admin
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\SystemCleanUp\System CleanUp.exe";#1
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\Setup.exe";#1
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\ServerCleanUp\Server CleanUp.exe";#1
@@ -88,19 +88,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
     - name: Download Artifacts
       uses: actions/download-artifact@v4
       with:
         name: CleanUp-Executables
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        # Uses the tag name if available, otherwise defaults to 'beta-latest'
         tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'beta-latest' }}
         files: |
           SystemCleanUp.zip
           ServerCleanUp.zip
         draft: false
-        prerelease: ${{ github.ref_type != 'tag' }}
+        # Marks as Pre-release if pushing to main OR if the tag name contains a hyphen (-)
+        prerelease: ${{ github.ref == 'refs/heads/main' || contains(github.ref_name, '-') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
