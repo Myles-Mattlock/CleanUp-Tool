@@ -1,3 +1,12 @@
+# Check if the process is already running inside Windows Terminal
+if ($env:WT_SESSION -eq $null) {
+    # If not, try to restart using 'wt.exe'
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        Start-Process "wt.exe" -ArgumentList " `"$PSCommandPath`""
+        exit
+    }
+}
+
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
