@@ -119,7 +119,7 @@ foreach ($File in $RegFiles) {
 
 # 4. Confirmation Pop-up
 $PopTitle = "CleanUp Tool Confirmation"
-$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization."
+$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization?"
 $Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
 
 if ($Result -eq "No") {
