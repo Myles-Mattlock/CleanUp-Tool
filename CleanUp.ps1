@@ -41,7 +41,7 @@ $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg")
 $LogDir = "C:\Logs"
 # ---------------------
 
-# --- UPDATE CHECKER ---
+# --- UPDATE CHECKER (STABLE ONLY) ---
 function Check-ForUpdates {
     Write-Host "Checking for updates..." -ForegroundColor Gray
     try {
@@ -49,60 +49,39 @@ function Check-ForUpdates {
         $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
         $Url = "https://api.github.com/repos/$RepoName/releases"
 
+        # Fetch releases and filter out anything marked as a Prerelease (Beta)
         $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
-        $LocalTag = $CurrentVersion.ToLower().TrimStart('v')
-        $LocalVersionBase = [version]($LocalTag.Split("-")[0])
+        $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
+
+        $LocalVersion = [version]($CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
         $UpdateFound = $null
 
-        foreach ($Rel in $Releases) {
-            $RemoteTag = $Rel.tag_name.ToLower().TrimStart('v')
-            $RemoteVersionBase = [version]($RemoteTag.Split("-")[0])
+        foreach ($Rel in $StableReleases) {
+            $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
 
-            # 1. Higher base version (e.g. 2.0.1 > 2.0.0)
-            if ($RemoteVersionBase -gt $LocalVersionBase) {
+            if ($RemoteVersion -gt $LocalVersion) {
                 $UpdateFound = $Rel
                 break 
-            }
-
-            # 2. Same base version (e.g. 2.0.0 == 2.0.0)
-            if ($RemoteVersionBase -eq $LocalVersionBase) {
-                $LocalIsBeta = $LocalTag -like "*-*"
-                $RemoteIsBeta = $RemoteTag -like "*-*"
-
-                # If local is Beta and remote is Stable -> Update
-                if ($LocalIsBeta -and -not $RemoteIsBeta) {
-                    $UpdateFound = $Rel
-                    break
-                }
-                
-                # If both are Betas, but remote is a higher beta string -> Update
-                if ($LocalIsBeta -and $RemoteIsBeta -and ($RemoteTag -gt $LocalTag)) {
-                    $UpdateFound = $Rel
-                    break
-                }
             }
         }
 
         if ($UpdateFound) {
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            $Label = if ($UpdateFound.prerelease) { "BETA UPDATE" } else { "STABLE UPDATE" }
-            Write-Host " [!] NEW $Label AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
+            Write-Host " [!] NEW STABLE UPDATE AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
             Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
             
-            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it and close this version?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new stable version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it now?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
             
             if ($UpdateChoice -eq "Yes") { 
                 Start-Process $UpdateFound.html_url
                 Write-Host "Redirecting to download page. Closing app..." -ForegroundColor Yellow
                 Start-Sleep -Seconds 2
                 Exit 
-            } else {
-                Write-Host " Continuing with current version..." -ForegroundColor Gray
             }
         } else {
-            Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
+            Write-Host " You are running the latest stable version (v$CurrentVersion)." -ForegroundColor DarkGreen
         }
     } catch {
         Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
