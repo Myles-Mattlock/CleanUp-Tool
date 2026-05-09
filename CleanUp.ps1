@@ -39,7 +39,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0-beta.41" 
+$CurrentVersion = "2.0.0" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
