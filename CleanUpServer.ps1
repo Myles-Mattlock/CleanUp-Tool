@@ -1,12 +1,34 @@
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+# Check if we are NOT in Windows Terminal (WT_SESSION is only set in WT)
+if ($null -eq $env:WT_SESSION) {
+    # Check if Windows Terminal is installed on the system
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        
+        # If running as .exe, launch the .exe. Otherwise, launch the .ps1
+        if ($currentProcess -like "*powershell.exe*") {
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+        } else {
+            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+        }
+        exit
+    }
+}
+# -----------------------------------------
+
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
     Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host "Please restart the application as Administrator."
     Write-Host "Press any key to exit..."
     $null = [Console]::ReadKey($true)
     Exit
 }
+
+# Load GUI Assemblies
+Add-Type -AssemblyName System.Windows.Forms
 
 # 2. Robust Path Logic
 if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
@@ -17,7 +39,7 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0-beta" 
+$CurrentVersion = "2.0.0-beta.41" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
@@ -59,6 +81,17 @@ function Check-ForUpdates {
             Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+            
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it and close this version?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+            
+            if ($UpdateChoice -eq "Yes") { 
+                Start-Process $UpdateFound.html_url
+                Write-Host "Redirecting to download page. Closing app..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+                Exit 
+            } else {
+                Write-Host " Continuing with current version..." -ForegroundColor Gray
+            }
         } else {
             Write-Host " You are running the latest version. Currently running: v$CurrentVersion" -ForegroundColor DarkGreen
         }
@@ -81,7 +114,7 @@ Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB
 Check-ForUpdates
 
 # 3. Import Sageset Registry Settings
-Write-Host "`n[0/4] Importing Cleanup Configurations..." -ForegroundColor Yellow
+Write-Host "`n[0/3] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
@@ -96,11 +129,16 @@ foreach ($File in $RegFiles) {
     }
 }
 
-# 4. User Confirmation
-Write-Host ""
-$Confirmation = Read-Host "Begin system cleanup? (Y/N)"
-if ($Confirmation -notmatch "y|yes") {
-    Write-Host "Operation cancelled." -ForegroundColor Red
+# 4. User Confirmation Pop-up
+$PopTitle = "CleanUp Tool Confirmation"
+$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin?"
+$PopButtons = [System.Windows.Forms.MessageBoxButtons]::YesNo
+$PopIcon = [System.Windows.Forms.MessageBoxIcon]::Question
+
+$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, $PopButtons, $PopIcon, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+
+if ($Result -eq "No") {
+    Write-Host "`nOperation cancelled by user." -ForegroundColor Red
     Start-Sleep -Seconds 2
     Exit
 }
@@ -108,7 +146,7 @@ if ($Confirmation -notmatch "y|yes") {
 # --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    Write-Host "`n[1/4] Clearing temporary files and logs..." -ForegroundColor Yellow
+    Write-Host "`n[1/3] Clearing temporary files and logs..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
@@ -125,10 +163,10 @@ try {
         }
     }
 
-    Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Write-Host "[2/3] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-    Write-Host "[3/4] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[3/3] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
