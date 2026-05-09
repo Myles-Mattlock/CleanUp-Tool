@@ -1,11 +1,7 @@
 # --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
-# Check if we are NOT in Windows Terminal (WT_SESSION is only set in WT)
 if ($null -eq $env:WT_SESSION) {
-    # Check if Windows Terminal is installed on the system
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
         $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        
-        # If running as .exe, launch the .exe. Otherwise, launch the .ps1
         if ($currentProcess -like "*powershell.exe*") {
             Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
         } else {
@@ -30,7 +26,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 # Load GUI Assemblies
 Add-Type -AssemblyName System.Windows.Forms
 
-# 2. Robust Path Logic
+# 2. Path Logic
 if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
     $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 } else {
@@ -62,12 +58,25 @@ function Check-ForUpdates {
             $RemoteTag = $Rel.tag_name.ToLower().TrimStart('v')
             $RemoteVersionBase = [version]($RemoteTag.Split("-")[0])
 
+            # 1. Higher base version (e.g. 2.0.1 > 2.0.0)
             if ($RemoteVersionBase -gt $LocalVersionBase) {
                 $UpdateFound = $Rel
                 break 
             }
-            if ($RemoteVersionBase -eq $LocalVersionBase -and $RemoteTag -ne $LocalTag) {
-                if ($RemoteTag.Length -lt $LocalTag.Length -or $RemoteTag -gt $LocalTag) {
+
+            # 2. Same base version (e.g. 2.0.0 == 2.0.0)
+            if ($RemoteVersionBase -eq $LocalVersionBase) {
+                $LocalIsBeta = $LocalTag -like "*-*"
+                $RemoteIsBeta = $RemoteTag -like "*-*"
+
+                # If local is Beta and remote is Stable -> Update
+                if ($LocalIsBeta -and -not $RemoteIsBeta) {
+                    $UpdateFound = $Rel
+                    break
+                }
+                
+                # If both are Betas, but remote is a higher beta string -> Update
+                if ($LocalIsBeta -and $RemoteIsBeta -and ($RemoteTag -gt $LocalTag)) {
                     $UpdateFound = $Rel
                     break
                 }
@@ -113,7 +122,7 @@ Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB
 # Run the update check
 Check-ForUpdates
 
-# 3. Import Sageset Registry Settings
+# 3. Import Registry Settings
 Write-Host "`n[0/4] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
@@ -129,13 +138,10 @@ foreach ($File in $RegFiles) {
     }
 }
 
-# 4. User Confirmation Pop-up
+# 4. Confirmation Pop-up
 $PopTitle = "CleanUp Tool Confirmation"
 $PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization."
-$PopButtons = [System.Windows.Forms.MessageBoxButtons]::YesNo
-$PopIcon = [System.Windows.Forms.MessageBoxIcon]::Question
-
-$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, $PopButtons, $PopIcon, [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
 
 if ($Result -eq "No") {
     Write-Host "`nOperation cancelled by user." -ForegroundColor Red
