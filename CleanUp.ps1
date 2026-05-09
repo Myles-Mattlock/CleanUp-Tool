@@ -1,30 +1,20 @@
-# --- 0. FORCE DISABLE CONSOLE PAUSE (QUICKEDIT) ---
-# This must run before any other logic to ensure the window doesn't freeze.
-$Win32Code = @'
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern IntPtr GetStdHandle(int nStdHandle);
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-'@
-
-try {
-    # Using a random name for the type to avoid conflicts during testing
-    $TypeSuffix = Get-Random
-    $Win32Utils = Add-Type -MemberDefinition $Win32Code -Name "Win32Utils_$TypeSuffix" -Namespace "Native" -PassThru
-    $hInput = $Win32Utils::GetStdHandle(-10) # STD_INPUT_HANDLE
-    $mode = 0
-    if ($Win32Utils::GetConsoleMode($hInput, [ref]$mode)) {
-        # 0x0040 = QuickEdit Mode
-        # 0x0080 = Extended Flags (Required to fully disable mouse selection)
-        $newMode = $mode -band -not 0x0040 -band -not 0x0080
-        $Win32Utils::SetConsoleMode($hInput, $newMode)
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+# Check if we are NOT in Windows Terminal (WT_SESSION is only set in WT)
+if ($null -eq $env:WT_SESSION) {
+    # Check if Windows Terminal is installed on the system
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        
+        # If running as .exe, launch the .exe. Otherwise, launch the .ps1
+        if ($currentProcess -like "*powershell.exe*") {
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+        } else {
+            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+        }
+        exit
     }
-} catch {
-    # Silently fail if not in a standard console
 }
-# --------------------------------------------------
+# -----------------------------------------
 
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
