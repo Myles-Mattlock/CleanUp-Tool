@@ -1,27 +1,37 @@
-# --- disable click ---
-$code = @'
+# --- 0. FORCE DISABLE CONSOLE PAUSE (QUICKEDIT) ---
+# This must run before any other logic to ensure the window doesn't freeze.
+$Win32Code = @'
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern IntPtr GetStdHandle(int nStdHandle);
-
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 '@
 
-$type = Add-Type -MemberDefinition $code -Name "Win32Utils" -Namespace "Native" -PassThru
-$hFull = $type::GetStdHandle(-10) # STD_INPUT_HANDLE
-$mode = 0
-$type::GetConsoleMode($hFull, [ref]$mode)
-$type::SetConsoleMode($hFull, $mode -band -not 0x0040) # 0x0040 is the QuickEdit flag
-# ---------------------
+try {
+    # Using a random name for the type to avoid conflicts during testing
+    $TypeSuffix = Get-Random
+    $Win32Utils = Add-Type -MemberDefinition $Win32Code -Name "Win32Utils_$TypeSuffix" -Namespace "Native" -PassThru
+    $hInput = $Win32Utils::GetStdHandle(-10) # STD_INPUT_HANDLE
+    $mode = 0
+    if ($Win32Utils::GetConsoleMode($hInput, [ref]$mode)) {
+        # 0x0040 = QuickEdit Mode
+        # 0x0080 = Extended Flags (Required to fully disable mouse selection)
+        $newMode = $mode -band -not 0x0040 -band -not 0x0080
+        $Win32Utils::SetConsoleMode($hInput, $newMode)
+    }
+} catch {
+    # Silently fail if not in a standard console
+}
+# --------------------------------------------------
 
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
     Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host "Please restart the application as Administrator."
     Write-Host "Press any key to exit..."
     $null = [Console]::ReadKey($true)
     Exit
@@ -82,7 +92,6 @@ function Check-ForUpdates {
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
             
-            # ASK TO UPDATE: If Yes, open link and EXIT script.
             $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it and close this version?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
             
             if ($UpdateChoice -eq "Yes") { 
