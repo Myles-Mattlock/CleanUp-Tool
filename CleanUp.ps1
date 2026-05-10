@@ -1,8 +1,27 @@
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+# Check if we are NOT in Windows Terminal (WT_SESSION is only set in WT)
+if ($null -eq $env:WT_SESSION) {
+    # Check if Windows Terminal is installed on the system
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        
+        # If running as .exe, launch the .exe. Otherwise, launch the .ps1
+        if ($currentProcess -like "*powershell.exe*") {
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+        } else {
+            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+        }
+        exit
+    }
+}
+# -----------------------------------------
+
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
     Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
     Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host "Please restart the application as Administrator."
     Write-Host "Press any key to exit..."
     $null = [Console]::ReadKey($true)
     Exit
@@ -63,7 +82,6 @@ function Check-ForUpdates {
             Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
             
-            # ASK TO UPDATE: If Yes, open link and EXIT script.
             $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it and close this version?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
             
             if ($UpdateChoice -eq "Yes") { 
