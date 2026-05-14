@@ -1,93 +1,187 @@
-# Check if the script is running as Administrator
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+if ($null -eq $env:WT_SESSION) {
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        if ($currentProcess -like "*powershell.exe*") {
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+        } else {
+            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+        }
+        exit
+    }
+}
+# -----------------------------------------
+
+# 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Output "This program requires administrative privileges. Please run it as Administrator."
-    # Pause so the user can see the message before the program exits
-    Write-Host "Press Enter to exit..."
-    Read-Host
+    Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
+    Write-Host "----------------------------------------------------------" -ForegroundColor Red
+    Write-Host "Please restart the application as Administrator."
+    Write-Host "Press any key to exit..."
+    $null = [Console]::ReadKey($true)
     Exit
 }
 
-# Script logic below this point will run with elevated privileges
-Write-Output "Running as Administrator! Proceeding with the System Cleanup commands..."
+# Load GUI Assemblies
+Add-Type -AssemblyName System.Windows.Forms
 
-# Run the Cleanup commands
-try {
-        ## Cleaning up
-        Add-Type -AssemblyName System.Windows.Forms
+# 2. Path Logic
+if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
+    $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+} else {
+    $CurrentDir = $PSScriptRoot
+}
+if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
-    # Display the Yes/No dialog box
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "This application will clear your cache and delete files in your recycle bin, continue? (y/n)?",          # Message
-        "Confirmation",                     # Title
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,  # Buttons
-        [System.Windows.Forms.MessageBoxIcon]::Question   # Icon
-    )
+# --- CONFIGURATION ---
+$CurrentVersion = "2.0.0" 
+$RepoName = "Myles-Mattlock/CleanUp-Tool"
+$RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
+$LogDir = "C:\Logs"
+# ---------------------
 
-    # Act based on the user's choice
-    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-        Write-Output "User chose YES"
-        
-        try {
-            # Commands to clear cache and delete files in recycle bin
-            Write-Host "Clearing cache"
-            Remove-Item C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item C:\Windows\Prefetch\* -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item C:\Windows\SoftwareDistribution\Download\* -Recurse -Force -ErrorAction SilentlyContinue
-            $TempPath = [System.IO.Path]::GetTempPath()
-            Remove-Item "$TempPath\*" -Recurse -Force -ErrorAction SilentlyContinue
-            
-            Write-Host "Cleaning up system"
-        }
-        catch {
-            $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
-            Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
-            # Optionally, you can still provide a silent indication that something went wrong
-            # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
-        }
+# --- UPDATE CHECKER (STABLE ONLY) ---
+function Check-ForUpdates {
+    Write-Host "Checking for updates..." -ForegroundColor Gray
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
+        $Url = "https://api.github.com/repos/$RepoName/releases"
 
-        Write-Host "Cleanup process finished."
-        
-        # Check if Windows.old exists
-        if (Test-Path "C:\Windows.old") {
-            # Importing cleanup settings
-            Write-Output "Previous Windows installation found. Removing..."
-            
-            try {  
-                # Remove Windows.old
-                Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:1" -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 180
+        # Fetch releases and filter out anything marked as a Prerelease (Beta)
+        $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
+        $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
+
+        $LocalVersion = [version]($CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
+        $UpdateFound = $null
+
+        foreach ($Rel in $StableReleases) {
+            $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
+
+            if ($RemoteVersion -gt $LocalVersion) {
+                $UpdateFound = $Rel
+                break 
             }
-            catch {
-                $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
-                Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
-                # Optionally, you can still provide a silent indication that something went wrong
-                # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
+        }
+
+        if ($UpdateFound) {
+            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+            Write-Host " [!] NEW STABLE UPDATE AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
+            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
+            Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
+            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+            
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new stable version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it now?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+            
+            if ($UpdateChoice -eq "Yes") { 
+                Start-Process $UpdateFound.html_url
+                Write-Host "Redirecting to download page. Closing app..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+                Exit 
             }
         } else {
-            Write-Output "No Previous Windows installation found."
-            
-            try {
-                Start-Process "cleanmgr.exe" -ArgumentList "/SAGERUN:2" -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 90
-            }
-            catch {
-                $ErrorMessage = "Error occurred on $((Get-Date -Format 'dd-MM-yyyy HH:mm:ss')): $($_.Exception.Message)"
-                Add-Content -Path "C:\Logs\SystemCleanUpErrors.log" -Value $ErrorMessage
-                # Optionally, you can still provide a silent indication that something went wrong
-                # Write-Host "Cleanup encountered some issues (see log file)." -ForegroundColor Yellow
-            }
+            Write-Host " You are running the latest stable version (v$CurrentVersion)." -ForegroundColor DarkGreen
         }
-        Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase
-    } else {
-        Write-Output "User chose NO"
-        Write-Host "Operation cancelled." -ForegroundColor Red
-            break
+    } catch {
+        Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
     }
-
-} catch {
-    Write-Output "An error occurred while running the System Cleanup app"
-    Write-Output $_.Exception.Message
 }
 
-Write-Output "Successfully cleaned up Windows, Application closing..."
-Start-Sleep -Seconds 5
+# Capture Starting Disk Space
+$Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+$StartingFreeSpace = $Drive.FreeSpace
+
+# Ensure Log directory exists
+if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
+
+Write-Host "`n--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
+Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
+
+# Run the update check
+Check-ForUpdates
+
+# 3. Import Registry Settings
+Write-Host "`n[0/4] Importing Cleanup Configurations..." -ForegroundColor Yellow
+foreach ($File in $RegFiles) {
+    $FilePath = Join-Path $CurrentDir $File
+    if (Test-Path $FilePath) {
+        $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
+        if ($proc.ExitCode -eq 0) {
+            Write-Host "  > Successfully applied: $File" -ForegroundColor Gray
+        } else {
+            Write-Warning "  > Failed to apply $File (Code: $($proc.ExitCode))"
+        }
+    } else {
+        Write-Warning "  > Registry file not found: $FilePath"
+    }
+}
+
+# 4. Confirmation Pop-up
+$PopTitle = "CleanUp Tool Confirmation"
+$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization?"
+$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
+
+if ($Result -eq "No") {
+    Write-Host "`nOperation cancelled by user." -ForegroundColor Red
+    Start-Sleep -Seconds 2
+    Exit
+}
+
+# --- CLEANUP LOGIC ---
+$CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    Write-Host "`n[1/4] Clearing temporary files and logs..." -ForegroundColor Yellow
+    $TargetFolders = @(
+        "C:\Windows\Temp\*",
+        "C:\Windows\Prefetch\*",
+        "C:\Windows\SoftwareDistribution\Download\*",
+        "$([System.IO.Path]::GetTempPath())*",
+        "C:\Intel",
+        "C:\PerfLogs"
+    )
+    
+    foreach ($Path in $TargetFolders) {
+        if (Test-Path $Path) {
+            Write-Host "  > Cleaning: $Path" -ForegroundColor Gray
+            Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+
+    Write-Host "[3/4] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+    Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
+
+    Write-Host "[4/4] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
+
+    $CleanupTimer.Stop()
+    $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+    $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
+    
+    $ReadableSpace = if ($SpaceSavedBytes -le 0) {
+        "0 MB"
+    } elseif ($SpaceSavedBytes -gt 1GB) {
+        "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
+    } else {
+        "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
+    }
+
+    Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
+    Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
+    Write-Host " TOTAL STORAGE RECLAIMED: $ReadableSpace" -ForegroundColor White -BackgroundColor DarkGreen
+    Write-Host " TIME ELAPSED: $("{0:mm} min {0:ss} sec" -f $CleanupTimer.Elapsed)" -ForegroundColor White
+    Write-Host "----------------------------------------------------------" -ForegroundColor Green
+
+} catch {
+    $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
+    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
+    Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
+}
+
+Write-Host "Press any key to exit..."
+$null = [Console]::ReadKey($true)
+Exit
