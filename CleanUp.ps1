@@ -1,39 +1,37 @@
-# --- 0. FORCE STANDALONE POWERSHELL 7 LAUNCH (BYPASS WINDOWS TERMINAL) ---
-# Check if we are running in PowerShell 7, or if we need to force relaunch outside of Windows Terminal
-if ($PSVersionTable.PSVersion.Major -lt 7 -or $null -ne $env:WT_SESSION) {
-    
-    # Fallback if script is run inline/unsaved and $PSCommandPath is empty
-    $ScriptPath = if (![string]::IsNullOrEmpty($PSCommandPath)) { $PSCommandPath } else { "$PSScriptRoot\CleanUp.ps1" }
-    
-    # If still empty (copy-pasted into console directly), use literal current path
-    if ($ScriptPath -eq "\CleanUp.ps1") {
-        $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
-        # Create a temporary file if it doesn't exist so pwsh doesn't crash
-        if (!(Test-Path $ScriptPath)) {
-            $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
-            Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
+if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
+    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
+        
+        # Fallback if script is run inline/unsaved and $PSCommandPath is empty
+        $ScriptPath = if (![string]::IsNullOrEmpty($PSCommandPath)) { $PSCommandPath } else { "$PSScriptRoot\CleanUp.ps1" }
+        
+        # If still empty (copy-pasted into console directly), use literal current path
+        if ($ScriptPath -eq "\CleanUp.ps1") {
+            $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
+            # Create a temporary file if it doesn't exist so pwsh doesn't crash
+            if (!(Test-Path $ScriptPath)) {
+                $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
+                Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
+            }
         }
-    }
 
-    # Target PowerShell 7 executable directly
-    if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
-        # If we are already in PowerShell 7 but inside Windows Terminal, force launch a new native window
-        if ($null -ne $env:WT_SESSION) {
-            Start-Process "pwsh.exe" -ArgumentList "-NoExit -File `"$ScriptPath`"" -WindowStyle Normal
+        # Check for PowerShell 7
+        if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -File `"$ScriptPath`""
             exit
-        }
-        # If we are in PS 5.1, launch it using pwsh 7
-        Start-Process "pwsh.exe" -ArgumentList "-NoExit -File `"$ScriptPath`""
-        exit
-    } else {
-        # Fallback: If PowerShell 7 isn't installed, launch in standard powershell.exe native window (no WT)
-        if ($null -ne $env:WT_SESSION) {
-            Start-Process "powershell.exe" -ArgumentList "-NoExit -File `"$ScriptPath`"" -WindowStyle Normal
+        } else {
+            # Fallback to standard powershell.exe inside WT if pwsh isn't found
+            $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            if ($currentProcess -like "*powershell.exe*") {
+                Start-Process "wt.exe" -ArgumentList "powershell.exe -File `"$ScriptPath`""
+            } else {
+                Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+            }
             exit
         }
     }
 }
-# -------------------------------------------------------------------------
+# --------------------------------------------------------
 
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
