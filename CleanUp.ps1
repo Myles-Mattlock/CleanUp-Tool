@@ -1,7 +1,5 @@
-# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 + BADGE ELEVATION ---
-$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not $IsAdmin) {
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
+if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
         
         # Fallback if script is run inline/unsaved and $PSCommandPath is empty
@@ -10,6 +8,7 @@ if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not
         # If still empty (copy-pasted into console directly), use literal current path
         if ($ScriptPath -eq "\CleanUp.ps1") {
             $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
+            # Create a temporary file if it doesn't exist so pwsh doesn't crash
             if (!(Test-Path $ScriptPath)) {
                 $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
                 Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
@@ -17,12 +16,19 @@ if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not
         }
 
         # Check for PowerShell 7
-        $ShellExe = if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) { "pwsh.exe" } else { "powershell.exe" }
-
-        # Inject a temporary elevated profile via a custom command line execution to trigger the badge
-        # We pass the profile definition inline to Windows Terminal to assign the elevation badge
-        Start-Process "wt.exe" -ArgumentList "new-tab --profile `"$ShellExe`" --elevate $ShellExe -NoExit -File `"$ScriptPath`""
-        exit
+        if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`""
+            exit
+        } else {
+            # Fallback to standard powershell.exe inside WT if pwsh isn't found
+            $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            if ($currentProcess -like "*powershell.exe*") {
+                Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$ScriptPath`""
+            } else {
+                Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+            }
+            exit
+        }
     }
 }
 # --------------------------------------------------------
