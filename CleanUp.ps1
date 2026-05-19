@@ -34,39 +34,51 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 }
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
-# Logo
-# Clear the host to give it a clean slate
+# =========================================================================
+# RIGHT-ALIGNED LOGO LOGIC
+# =========================================================================
 Clear-Host
-
-# Set the output encoding to UTF-8 to ensure characters render perfectly
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Colors mapping to your original design
 $Teal = "DarkCyan"
 $White = "White"
 
-# The Custom Cleaning Icon Banner
-Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
-Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
-Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
-Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
-Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
-Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
-Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
-Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
-Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
-Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
-Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
-Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
-Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
-Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
-Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
-Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
-Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
+# Get terminal buffer width (defaults to 120 if it can't detect it)
+$ConsoleWidth = try { [Console]::WindowWidth } catch { 120 }
+$BannerWidth = 46
 
-Write-Host ""
-# Subtitles matching your screenshot style
-Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
+# Helper function to align text to the right
+function Write-Right {
+    param (
+        [string]$Text,
+        [string]$ForegroundColor
+    )
+    # PadLeft pads spaces to the total window length width
+    $PaddedText = $Text.PadLeft($ConsoleWidth)
+    Write-Host $PaddedText -ForegroundColor $ForegroundColor
+}
+
+# The Banner Lines (Trimming the internal padding slightly to stabilize calculations)
+Write-Right "               ,▄▄██████████▄▄,               " $Teal
+Write-Right "            ▄████▀▀▀        ▀▀████▄           " $Teal
+Write-Right "          ████▀                  ▀███▄        " $Teal
+Write-Right "        ▄███▀          ▓▓          ▀███▄      " $Teal
+Write-Right "       ███▀           ▓▓             ▀███     " $Teal
+Write-Right "      ███            ▓▓               ███     " $Teal
+Write-Right "     ███            ▓▓                 ███    " $Teal
+Write-Right "     ███          ▄███▄         ░░     ███    " $Teal
+Write-Right "     ███   •     ███████       ░░░     ███    " $Teal
+Write-Right "     ███  •●    █████████     ══       ███    " $Teal
+Write-Right "     ███ ▄▄█▄  ███████████   ═══       ███    " $Teal
+Write-Right "      ███ ▀▀  █████████████           ███     " $Teal
+Write-Right "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " $Teal
+Write-Right "        ▀███▄ ════════════════════ ▄███▀      " $Teal
+Write-Right "          ▀████▄                ▄████▀        " $Teal
+Write-Right "            ▀██████████████████████▀          " $Teal
+Write-Right "               ▀▀▀████████████▀▀▀             " $Teal
+Write-Right "" $White
+Write-Right "===== Myles Mattlock CleanUp =====" $White
+# =========================================================================
 
 # --- CONFIGURATION ---
 $CurrentVersion = "2.0.0" 
