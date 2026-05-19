@@ -1,16 +1,24 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
-if ($null -eq $env:WT_SESSION) {
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
+if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        if ($currentProcess -like "*powershell.exe*") {
-            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+        # Check if PowerShell 7 (pwsh.exe) is installed on the system
+        if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
+            # Launch Windows Terminal utilizing PowerShell 7 to run this script
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$PSCommandPath`""
+            exit
         } else {
-            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+            # Fallback to standard powershell.exe inside WT if pwsh isn't found
+            $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            if ($currentProcess -like "*powershell.exe*") {
+                Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+            } else {
+                Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+            }
+            exit
         }
-        exit
     }
 }
-# -----------------------------------------
+# --------------------------------------------------------
 
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
