@@ -83,7 +83,7 @@ Write-Host "     ███ ▄▄█▄  ███████████   ═
 Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
 Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
 Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
-          ▀████▄                ▄████▀        " -ForegroundColor $Teal
+Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
 Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
 Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
 
