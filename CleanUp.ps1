@@ -1,16 +1,29 @@
 # --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
 if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        # Check if PowerShell 7 (pwsh.exe) is installed on the system
+        
+        # Fallback if script is run inline/unsaved and $PSCommandPath is empty
+        $ScriptPath = if (![string]::IsNullOrEmpty($PSCommandPath)) { $PSCommandPath } else { "$PSScriptRoot\CleanUp.ps1" }
+        
+        # If still empty (copy-pasted into console directly), use literal current path
+        if ($ScriptPath -eq "\CleanUp.ps1") {
+            $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
+            # Create a temporary file if it doesn't exist so pwsh doesn't crash
+            if (!(Test-Path $ScriptPath)) {
+                $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
+                Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
+            }
+        }
+
+        # Check for PowerShell 7
         if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
-            # Launch Windows Terminal utilizing PowerShell 7 to run this script
-            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$PSCommandPath`""
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`""
             exit
         } else {
             # Fallback to standard powershell.exe inside WT if pwsh isn't found
             $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
             if ($currentProcess -like "*powershell.exe*") {
-                Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
+                Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$ScriptPath`""
             } else {
                 Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
             }
