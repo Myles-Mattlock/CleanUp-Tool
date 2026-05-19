@@ -22,9 +22,9 @@ jobs:
       run: pwsh -Command "Install-Module -Name ps2exe -Force"
       shell: pwsh
 
-    - name: Install Build Tools (mt.exe)
-      run: choco install visualstudio2026buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
-      shell: pwsh
+    # - name: Install Build Tools (mt.exe)
+    #   run: choco install visualstudio2026buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+    #   shell: pwsh
 
     # --- SYSTEM CLEANUP BUILD ---
     - name: Prepare System Staging
