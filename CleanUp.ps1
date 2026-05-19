@@ -34,6 +34,40 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
 }
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
+# Logo
+# Clear the host to give it a clean slate
+Clear-Host
+
+# Set the output encoding to UTF-8 to ensure characters render perfectly
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Colors mapping to your original design
+$Teal = "DarkCyan"
+$White = "White"
+
+# The Custom Cleaning Icon Banner
+Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
+Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
+Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
+Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
+Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
+Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
+Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
+Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
+Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
+Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
+Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
+Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
+Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
+Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
+Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
+
+Write-Host ""
+# Subtitles matching your screenshot style
+Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
+
 # --- CONFIGURATION ---
 $CurrentVersion = "2.0.0" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
