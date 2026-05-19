@@ -1,5 +1,7 @@
-# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
-if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 + ADMIN LAUNCH ---
+$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not $IsAdmin) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
         
         # Fallback if script is run inline/unsaved and $PSCommandPath is empty
@@ -8,25 +10,19 @@ if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
         # If still empty (copy-pasted into console directly), use literal current path
         if ($ScriptPath -eq "\CleanUp.ps1") {
             $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
-            # Create a temporary file if it doesn't exist so pwsh doesn't crash
             if (!(Test-Path $ScriptPath)) {
                 $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
                 Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
             }
         }
 
-        # Check for PowerShell 7
+        # Check for PowerShell 7 and relaunch with "-Verb RunAs" for Admin elevation
         if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
-            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`""
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`"" -Verb RunAs
             exit
         } else {
             # Fallback to standard powershell.exe inside WT if pwsh isn't found
-            $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-            if ($currentProcess -like "*powershell.exe*") {
-                Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$ScriptPath`""
-            } else {
-                Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
-            }
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$ScriptPath`"" -Verb RunAs
             exit
         }
     }
