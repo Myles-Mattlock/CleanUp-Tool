@@ -1,4 +1,4 @@
-# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 + ADMIN LAUNCH ---
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 + BADGE ELEVATION ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not $IsAdmin) {
@@ -16,15 +16,13 @@ if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7 -or -not
             }
         }
 
-        # Check for PowerShell 7 and relaunch with "-Verb RunAs" for Admin elevation
-        if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
-            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`"" -Verb RunAs
-            exit
-        } else {
-            # Fallback to standard powershell.exe inside WT if pwsh isn't found
-            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$ScriptPath`"" -Verb RunAs
-            exit
-        }
+        # Check for PowerShell 7
+        $ShellExe = if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) { "pwsh.exe" } else { "powershell.exe" }
+
+        # Inject a temporary elevated profile via a custom command line execution to trigger the badge
+        # We pass the profile definition inline to Windows Terminal to assign the elevation badge
+        Start-Process "wt.exe" -ArgumentList "new-tab --profile `"$ShellExe`" --elevate $ShellExe -NoExit -File `"$ScriptPath`""
+        exit
     }
 }
 # --------------------------------------------------------
