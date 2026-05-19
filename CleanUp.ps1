@@ -181,6 +181,7 @@ if ($Result -eq "No") {
     Write-Host "`nOperation cancelled by user." -ForegroundColor Red
     Start-Sleep -Seconds 2
     Exit
+    Exit
 }
 
 # --- CLEANUP LOGIC ---
