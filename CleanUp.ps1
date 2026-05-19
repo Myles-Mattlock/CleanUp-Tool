@@ -17,7 +17,7 @@ if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
 
         # Check for PowerShell 7
         if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
-            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$ScriptPath`""
+            Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command & { $input }" -Verb RunAs
             exit
         } else {
             # Fallback to standard powershell.exe inside WT if pwsh isn't found
@@ -180,7 +180,6 @@ $Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", 
 if ($Result -eq "No") {
     Write-Host "`nOperation cancelled by user." -ForegroundColor Red
     Start-Sleep -Seconds 2
-    Exit
     Exit
 }
 
