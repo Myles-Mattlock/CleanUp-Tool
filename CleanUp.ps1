@@ -3,7 +3,7 @@ if ($null -eq $env:WT_SESSION) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
         $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
         if ($currentProcess -like "*powershell.exe*") {
-            Start-Process "wt.exe" -ArgumentList "pwsh.exe -NoExit -File `"$PSCommandPath`""
+            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
         } else {
             Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
         }
