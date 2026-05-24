@@ -90,7 +90,7 @@ Write-Host ""
 Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0" 
+$CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $LogDir = "C:\Logs"
