@@ -210,7 +210,7 @@ try {
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
-    Write-Host "[4/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[4/5] Flushing DNS" -ForegroundColor Yellow
     ipconfig /flushdns
 
     Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
