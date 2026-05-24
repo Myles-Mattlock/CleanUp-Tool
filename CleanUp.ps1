@@ -1,16 +1,37 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
-if ($null -eq $env:WT_SESSION) {
+# --- 0. FORCE WINDOWS TERMINAL + POWERSHELL 7 LAUNCH ---
+if ($null -eq $env:WT_SESSION -or $PSVersionTable.PSVersion.Major -lt 7) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        if ($currentProcess -like "*powershell.exe*") {
-            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
-        } else {
-            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+        
+        # Fallback if script is run inline/unsaved and $PSCommandPath is empty
+        $ScriptPath = if (![string]::IsNullOrEmpty($PSCommandPath)) { $PSCommandPath } else { "$PSScriptRoot\CleanUp.ps1" }
+        
+        # If still empty (copy-pasted into console directly), use literal current path
+        if ($ScriptPath -eq "\CleanUp.ps1") {
+            $ScriptPath = Join-Path (Get-Location) "CleanUp.ps1"
+            # Create a temporary file if it doesn't exist so pwsh doesn't crash
+            if (!(Test-Path $ScriptPath)) {
+                $MyScriptContent = $MyInvocation.MyCommand.ScriptBlock.ToString()
+                Out-File -FilePath $ScriptPath -InputObject $MyScriptContent -Encoding utf8
+            }
         }
-        exit
+
+        # Check for PowerShell 7
+        if (Get-Command "pwsh.exe" -ErrorAction SilentlyContinue) {
+            Start-Process "wt.exe" -ArgumentList "pwsh.exe -File `"$ScriptPath`""
+            exit
+        } else {
+            # Fallback to standard powershell.exe inside WT if pwsh isn't found
+            $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            if ($currentProcess -like "*powershell.exe*") {
+                Start-Process "wt.exe" -ArgumentList "powershell.exe -File `"$ScriptPath`""
+            } else {
+                Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
+            }
+            exit
+        }
     }
 }
-# -----------------------------------------
+# --------------------------------------------------------
 
 # 1. Administrator Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -33,6 +54,40 @@ if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
     $CurrentDir = $PSScriptRoot
 }
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
+
+# Logo
+# Clear the host to give it a clean slate
+Clear-Host
+
+# Set the output encoding to UTF-8 to ensure characters render perfectly
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Colors mapping to your original design
+$Teal = "DarkCyan"
+$White = "White"
+
+# The Custom Cleaning Icon Banner
+Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
+Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
+Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
+Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
+Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
+Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
+Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
+Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
+Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
+Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
+Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
+Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
+Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
+Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
+Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
+
+Write-Host ""
+# Subtitles matching your screenshot style
+Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
 
 # --- CONFIGURATION ---
 $CurrentVersion = "2.0.0" 
