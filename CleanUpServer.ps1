@@ -64,7 +64,7 @@ Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
 $CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
-$LogDir = "C:\Program Files\SystemCleanUp\Logs"
+$LogDir = "C:\Program Files\ServerCleanUp\Logs"
 # ---------------------
 
 # --- UPDATE CHECKER (STABLE ONLY) ---
@@ -145,7 +145,7 @@ foreach ($File in $RegFiles) {
 
 # 4. Confirmation Pop-up
 $PopTitle = "CleanUp Tool Confirmation"
-$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization?"
+$PopText  = "Would you like to begin the server cleanup process now?`n`nThis will clear temp files, empty the recycle bin?"
 $Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
 
 if ($Result -eq "No") {
@@ -201,8 +201,8 @@ try {
 
 } catch {
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
-    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
-    Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
+    Add-Content -Path "$LogDir\ServerCleanUpErrors.log" -Value $ErrorMessage
+    Write-Host "`nAn error occurred. See $LogDir\ServerCleanUpErrors.log" -ForegroundColor Red
 }
 
 Write-Host "Press any key to exit..."

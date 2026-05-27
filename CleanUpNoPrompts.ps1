@@ -43,7 +43,6 @@ Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
 $CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
-$LogDir = "C:\Program Files\SystemCleanUp\Logs"
 # ---------------------
 
 # Capture Starting Disk Space
