@@ -1,24 +1,3 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH FOR EXE ---
-if ($null -eq $env:WT_SESSION) {
-    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        # Get the literal path of the running .exe file
-        $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        
-        # Relaunch the EXE inside Windows Terminal and exit the legacy console
-        Start-Process "wt.exe" -ArgumentList "`"$ExePath`""
-        Exit
-    }
-}
-# --------------------------------------------------------
-
-# 1. Administrator Check (Self-Elevating Fallback)
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-    # Automatically prompts for UAC admin rights rather than just crashing
-    Start-Process "$ExePath" -Verb RunAs
-    Exit
-}
-
 # Load GUI Assemblies
 Add-Type -AssemblyName System.Windows.Forms
 
