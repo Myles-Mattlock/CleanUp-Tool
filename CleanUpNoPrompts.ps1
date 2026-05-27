@@ -49,9 +49,6 @@ $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg")
 $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $StartingFreeSpace = $Drive.FreeSpace
 
-# Ensure Log directory exists
-if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
-
 # 3. Import Registry Settings
 Write-Host "`n[0/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
