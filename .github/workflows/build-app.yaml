@@ -22,9 +22,9 @@ jobs:
       run: pwsh -Command "Install-Module -Name ps2exe -Force"
       shell: pwsh
 
-    - name: Install Build Tools (mt.exe)
-      run: choco install visualstudio2026buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
-      shell: pwsh
+    # - name: Install Build Tools (mt.exe)
+    #   run: choco install visualstudio2026buildtools -y --package-parameters "--add Microsoft.Component.MSBuild --add Microsoft.Component.VC"
+    #   shell: pwsh
 
     # --- SYSTEM CLEANUP BUILD ---
     - name: Prepare System Staging
@@ -32,7 +32,7 @@ jobs:
         New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
         
         # Compile Tool into the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.1'"
         
         # Compile System-specific Installer (Renamed from installer.ps1 to SystemSetup.ps1)
         pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '1.0.0'"
@@ -47,7 +47,7 @@ jobs:
         New-Item -ItemType Directory -Path "Staging_Server\ServerCleanUp" -Force
         
         # Compile Tool into the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'Staging_Server\ServerCleanUp\Server CleanUp.exe' -IconFile icon.ico -version '2.0.0'"
+        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'Staging_Server\ServerCleanUp\Server CleanUp.exe' -IconFile icon.ico -version '2.0.1'"
         
         # Compile Server-specific Installer (Newly added ServerSetup.ps1)
         pwsh -Command "ps2exe -InputFile ServerSetup.ps1 -OutputFile 'Staging_Server\Setup-Server.exe' -IconFile icon.ico -version '1.0.0'"

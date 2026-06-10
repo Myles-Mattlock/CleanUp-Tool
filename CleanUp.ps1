@@ -1,44 +1,70 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH FOR EXE ---
 if ($null -eq $env:WT_SESSION) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        if ($currentProcess -like "*powershell.exe*") {
-            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
-        } else {
-            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
-        }
-        exit
+        # Get the literal path of the running .exe file
+        $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        
+        # Relaunch the EXE inside Windows Terminal and exit the legacy console
+        Start-Process "wt.exe" -ArgumentList "`"$ExePath`""
+        Exit
     }
 }
-# -----------------------------------------
+# --------------------------------------------------------
 
-# 1. Administrator Check
+# 1. Administrator Check (Self-Elevating Fallback)
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "----------------------------------------------------------" -ForegroundColor Red
-    Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
-    Write-Host "----------------------------------------------------------" -ForegroundColor Red
-    Write-Host "Please restart the application as Administrator."
-    Write-Host "Press any key to exit..."
-    $null = [Console]::ReadKey($true)
+    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    # Automatically prompts for UAC admin rights rather than just crashing
+    Start-Process "$ExePath" -Verb RunAs
     Exit
 }
 
 # Load GUI Assemblies
 Add-Type -AssemblyName System.Windows.Forms
 
-# 2. Path Logic
-if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
-    $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
-} else {
-    $CurrentDir = $PSScriptRoot
-}
+# 2. Executable Path Logic
+$CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
+# Logo
+# Clear the host to give it a clean slate
+Clear-Host
+
+# Set the output encoding to UTF-8 to ensure characters render perfectly
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Colors mapping to your original design
+$Teal = "DarkCyan"
+$White = "White"
+
+# The Custom Cleaning Icon Banner
+Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
+Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
+Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
+Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
+Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
+Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
+Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
+Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
+Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
+Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
+Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
+Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
+Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
+Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
+Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
+
+Write-Host ""
+# Subtitles matching your screenshot style
+Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
+
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0" 
+$CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
-$LogDir = "C:\Logs"
+$LogDir = "C:\Program Files\SystemCleanUp\Logs"
 # ---------------------
 
 # --- UPDATE CHECKER (STABLE ONLY) ---
@@ -102,7 +128,7 @@ Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB
 Check-ForUpdates
 
 # 3. Import Registry Settings
-Write-Host "`n[0/4] Importing Cleanup Configurations..." -ForegroundColor Yellow
+Write-Host "`n[0/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
 foreach ($File in $RegFiles) {
     $FilePath = Join-Path $CurrentDir $File
     if (Test-Path $FilePath) {
@@ -131,7 +157,7 @@ if ($Result -eq "No") {
 # --- CLEANUP LOGIC ---
 $CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    Write-Host "`n[1/4] Clearing temporary files and logs..." -ForegroundColor Yellow
+    Write-Host "`n[1/5] Clearing temporary files and logs..." -ForegroundColor Yellow
     $TargetFolders = @(
         "C:\Windows\Temp\*",
         "C:\Windows\Prefetch\*",
@@ -148,14 +174,17 @@ try {
         }
     }
 
-    Write-Host "[2/4] Emptying Recycle Bin..." -ForegroundColor Yellow
+    Write-Host "[2/5] Emptying Recycle Bin..." -ForegroundColor Yellow
     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-    Write-Host "[3/4] Running Disk Cleanup Utility..." -ForegroundColor Yellow
+    Write-Host "[3/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
     $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
     Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
 
-    Write-Host "[4/4] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
+    Write-Host "[4/5] Flushing DNS" -ForegroundColor Yellow
+    ipconfig /flushdns
+
+    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
     Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
 
     $CleanupTimer.Stop()

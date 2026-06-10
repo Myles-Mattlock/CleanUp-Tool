@@ -1,44 +1,70 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH ---
+# --- 0. FORCE WINDOWS TERMINAL LAUNCH FOR EXE ---
 if ($null -eq $env:WT_SESSION) {
     if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        if ($currentProcess -like "*powershell.exe*") {
-            Start-Process "wt.exe" -ArgumentList "powershell.exe -NoExit -File `"$PSCommandPath`""
-        } else {
-            Start-Process "wt.exe" -ArgumentList "`"$currentProcess`""
-        }
-        exit
+        # Get the literal path of the running .exe file
+        $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        
+        # Relaunch the EXE inside Windows Terminal and exit the legacy console
+        Start-Process "wt.exe" -ArgumentList "`"$ExePath`""
+        Exit
     }
 }
-# -----------------------------------------
+# --------------------------------------------------------
 
-# 1. Administrator Check
+# 1. Administrator Check (Self-Elevating Fallback)
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "----------------------------------------------------------" -ForegroundColor Red
-    Write-Host " ERROR: THIS TOOL REQUIRES ADMINISTRATIVE PRIVILEGES." -ForegroundColor Red
-    Write-Host "----------------------------------------------------------" -ForegroundColor Red
-    Write-Host "Please restart the application as Administrator."
-    Write-Host "Press any key to exit..."
-    $null = [Console]::ReadKey($true)
+    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    # Automatically prompts for UAC admin rights rather than just crashing
+    Start-Process "$ExePath" -Verb RunAs
     Exit
 }
 
 # Load GUI Assemblies
 Add-Type -AssemblyName System.Windows.Forms
 
-# 2. Path Logic
-if ([System.IO.Path]::GetExtension($PSCommandPath) -eq '.exe') {
-    $CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
-} else {
-    $CurrentDir = $PSScriptRoot
-}
+# 2. Executable Path Logic
+$CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
+# Logo
+# Clear the host to give it a clean slate
+Clear-Host
+
+# Set the output encoding to UTF-8 to ensure characters render perfectly
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Colors mapping to your original design
+$Teal = "DarkCyan"
+$White = "White"
+
+# The Custom Cleaning Icon Banner
+Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
+Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
+Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
+Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
+Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
+Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
+Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
+Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
+Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
+Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
+Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
+Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
+Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
+Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
+Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
+Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
+
+Write-Host ""
+# Subtitles matching your screenshot style
+Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
+
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.0" 
+$CurrentVersion = "2.0.1" 
 $RepoName = "Myles-Mattlock/CleanUp-Tool"
 $RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
-$LogDir = "C:\Logs"
+$LogDir = "C:\Program Files\ServerCleanUp\Logs"
 # ---------------------
 
 # --- UPDATE CHECKER (STABLE ONLY) ---
@@ -119,7 +145,7 @@ foreach ($File in $RegFiles) {
 
 # 4. Confirmation Pop-up
 $PopTitle = "CleanUp Tool Confirmation"
-$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin?"
+$PopText  = "Would you like to begin the server cleanup process now?`n`nThis will clear temp files, empty the recycle bin?"
 $Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
 
 if ($Result -eq "No") {
@@ -175,8 +201,8 @@ try {
 
 } catch {
     $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
-    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
-    Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
+    Add-Content -Path "$LogDir\ServerCleanUpErrors.log" -Value $ErrorMessage
+    Write-Host "`nAn error occurred. See $LogDir\ServerCleanUpErrors.log" -ForegroundColor Red
 }
 
 Write-Host "Press any key to exit..."
