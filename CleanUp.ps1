@@ -371,7 +371,7 @@ $BtnStart.Add_Click({
     [void]$PowerShell.AddArgument($CurrentDir)
     [void]$PowerShell.AddArgument($Global:RegFiles)
     [void]$PowerShell.AddArgument($Global:LogQueue)
-    $PowerShell.AddArgument($Global:ProgressQueue) | Out-Null
+    [void]$PowerShell.AddArgument($Global:ProgressQueue)
     
     $AsyncResult = $PowerShell.BeginInvoke()
 
@@ -393,7 +393,7 @@ $BtnStart.Add_Click({
 
         if ($AsyncResult.IsCompleted) {
             $Timer.Stop()
-            $PowerShell.EndInvoke($AsyncResult)
+            try { $PowerShell.EndInvoke($AsyncResult) } catch {}
             $PowerShell.Dispose()
             $Runspace.Dispose()
 
@@ -402,8 +402,12 @@ $BtnStart.Add_Click({
             $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
             $TxtReclaimed.Text = $ReadableSpace
+            
+            # Re-enable button before applying WPF properties to avoid state locking
+            $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
-            $BtnStart.Background = "#28A745" # Sets button background color to Green upon completion
+            $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
+            
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
         }
     })
