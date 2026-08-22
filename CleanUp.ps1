@@ -315,7 +315,8 @@ function Set-ActiveProfileButton ($Profile) {
 }
 
 function Evaluate-CurrentProfile {
-    if ($Global:IsUpdatingProfile) { return }
+    # Ignore profile recalculations while updating or when a cleanup is running
+    if ($Global:IsUpdatingProfile -or (-not $BtnStart.IsEnabled)) { return }
 
     if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) {
         Set-ActiveProfileButton "Default"
@@ -337,6 +338,7 @@ foreach ($Chk in $AllCheckboxes) {
 
 # Profile Button Click Handlers
 $BtnProfileDefault.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
     $Global:IsUpdatingProfile = $true
     $ChkTempFiles.IsChecked  = $true
     $ChkRecycleBin.IsChecked = $true
@@ -348,6 +350,7 @@ $BtnProfileDefault.Add_Click({
 })
 
 $BtnProfileServer.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
     $Global:IsUpdatingProfile = $true
     $ChkTempFiles.IsChecked  = $true
     $ChkRecycleBin.IsChecked = $true
@@ -359,6 +362,7 @@ $BtnProfileServer.Add_Click({
 })
 
 $BtnProfileCustom.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
     Set-ActiveProfileButton "Custom"
 })
 
