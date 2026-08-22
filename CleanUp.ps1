@@ -228,7 +228,6 @@ $BrushInactiveBG  = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushActiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
 $BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
 
-# Flag to prevent event loop triggers when setting profiles programmatically
 $Global:IsUpdatingProfile = $false
 
 function Set-ActiveProfileButton ($Profile) {
@@ -245,11 +244,9 @@ function Set-ActiveProfileButton ($Profile) {
 function Evaluate-CurrentProfile {
     if ($Global:IsUpdatingProfile) { return }
 
-    # Check if exact match for Default
     if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) {
         Set-ActiveProfileButton "Default"
     }
-    # Check if exact match for Server
     elseif ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and (-not $ChkFlushDNS.IsChecked) -and (-not $ChkDism.IsChecked)) {
         Set-ActiveProfileButton "Server"
     }
@@ -408,7 +405,6 @@ $BtnStart.Add_Click({
         DoDism      = $ChkDism.IsChecked
     }
 
-    # Verify at least one task is chosen
     $TotalSelected = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
     if ($TotalSelected -eq 0) {
         $TxtStatus.Text = "Please select at least one task to run."
@@ -417,6 +413,8 @@ $BtnStart.Add_Click({
 
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
+    $CleanProgress.Value = 0
+    $TxtProgressPercent.Text = "0%"
     
     # Disable controls during cleanup
     $BtnProfileDefault.IsEnabled = $false
@@ -470,9 +468,8 @@ $BtnStart.Add_Click({
             }
         }
 
-        # Calculate dynamic progress step sizes
         $TotalTasks = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
-        $CurrentTaskIndex = 0
+        $CompletedTasks = 0
 
         # Always apply registry prep settings automatically
         foreach ($File in $RegFiles) {
@@ -484,9 +481,8 @@ $BtnStart.Add_Click({
 
         # 1. Clear Temp Files
         if ($SelectedTasks.DoTemp) {
-            $CurrentTaskIndex++
-            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
-            Send-Progress $Percent "Clearing temporary files..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Clearing temporary files..."
             Send-Log "=== CLEARING TEMP FILES AND LOGS ==="
             $TargetFolders = @(
                 "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
@@ -499,44 +495,55 @@ $BtnStart.Add_Click({
                     Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
                 }
             }
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "Temp files cleared."
         }
 
         # 2. Empty Recycle Bin
         if ($SelectedTasks.DoRecycle) {
-            $CurrentTaskIndex++
-            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
-            Send-Progress $Percent "Emptying Recycle Bin..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Emptying Recycle Bin..."
             Send-Log "=== EMPTYING RECYCLE BIN ==="
             Clear-RecycleBin -Force -ErrorAction SilentlyContinue
             Send-Log "Recycle bin emptied."
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "Recycle bin emptied."
         }
 
         # 3. Disk Cleanup Utility
         if ($SelectedTasks.DoCleanmgr) {
-            $CurrentTaskIndex++
-            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
-            Send-Progress $Percent "Running Disk Cleanup Utility..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Running Disk Cleanup Utility..."
             Send-Log "=== RUNNING CLEANMGR UTILITY ==="
             $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
             Run-SilentProcess "cleanmgr.exe" $CleanParam
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "Disk cleanup complete."
         }
 
         # 4. Flush DNS
         if ($SelectedTasks.DoFlushDNS) {
-            $CurrentTaskIndex++
-            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
-            Send-Progress $Percent "Flushing DNS Cache..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Flushing DNS Cache..."
             Send-Log "=== FLUSHING DNS CACHE ==="
             Run-SilentProcess "ipconfig.exe" "/flushdns"
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "DNS Cache flushed."
         }
 
         # 5. DISM Optimization
         if ($SelectedTasks.DoDism) {
-            $CurrentTaskIndex++
-            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
-            Send-Progress $Percent "Optimizing DISM Component Store..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Optimizing DISM Component Store..."
             Send-Log "=== RUNNING DISM COMPONENT STORE CLEANUP ==="
             Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "DISM cleanup complete."
         }
 
         Send-Progress 100 "Optimization Complete!"
@@ -558,7 +565,7 @@ $BtnStart.Add_Click({
     $Global:AsyncResult = $Global:PowerShell.BeginInvoke()
 
     $Timer = New-Object System.Windows.Threading.DispatcherTimer
-    $Timer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $Timer.Interval = [TimeSpan]::FromMilliseconds(50)
 
     $Timer.Add_Tick({
         param($sender, $e)
@@ -577,6 +584,14 @@ $BtnStart.Add_Click({
 
         $isDone = $false
         if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or ($Global:AsyncResult -and $Global:AsyncResult.IsCompleted)) {
+            # Ensure output queues are fully flushed before tearing down
+            while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
+            while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
+                $CleanProgress.Value = $prog.Value
+                $TxtProgressPercent.Text = "$($prog.Value)%"
+                $TxtStatus.Text = $prog.Status
+            }
+
             $sender.Stop()
             
             try { if ($Global:PowerShell) { $Global:PowerShell.EndInvoke($Global:AsyncResult) } } catch {}
