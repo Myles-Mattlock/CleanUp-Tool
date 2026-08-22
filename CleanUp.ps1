@@ -8,7 +8,6 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Exit
 }
 
-# Add Required WPF & GUI Assemblies
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
@@ -24,7 +23,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="500" Width="700" 
+        Title="Myles Mattlock CleanUp Tool" Height="520" Width="720" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="20">
@@ -105,11 +104,11 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 </Window>
 "@
 
-# Read XAML
+# Load XAML
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
-# Connect UI Controls to PowerShell Variables
+# Map UI Controls
 $TxtVersion      = $Window.FindName("TxtVersion")
 $TxtInitialSpace = $Window.FindName("TxtInitialSpace")
 $TxtReclaimed    = $Window.FindName("TxtReclaimed")
@@ -119,15 +118,58 @@ $CleanProgress   = $Window.FindName("CleanProgress")
 $TxtStatus       = $Window.FindName("TxtStatus")
 $BtnStart        = $Window.FindName("BtnStart")
 
-# Helper function to write logs safely to UI
+# Thread-safe Function to Stream Text into GUI Log Terminal
 function Write-GuiLog ($Message) {
+    if ([string]::IsNullOrWhiteSpace($Message)) { return }
     $TxtLog.Dispatcher.Invoke([Action]{
         $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
         $LogScroll.ScrollToEnd()
     })
 }
 
-# --- INITIALIZATION LOGIC ---
+# Real-Time Output Process Runner
+function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = $FilePath
+    $pinfo.Arguments = $ArgumentList
+    $pinfo.UseShellExecute = $false
+    $pinfo.RedirectStandardOutput = $true
+    $pinfo.RedirectStandardError = $true
+    $pinfo.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $pinfo
+
+    # Attach event handlers to stream output in real time
+    $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
+        if ($Event.SourceEventArgs.Data) {
+            Write-GuiLog $Event.SourceEventArgs.Data
+        }
+    }
+    $errEvent = Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
+        if ($Event.SourceEventArgs.Data) {
+            Write-GuiLog "ERR: $($Event.SourceEventArgs.Data)"
+        }
+    }
+
+    $process.Start() | Out-Null
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+
+    # Process events while waiting for completion to ensure UI stays responsive
+    while (-not $process.HasExited) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 100
+    }
+
+    $process.WaitForExit()
+    
+    # Cleanup event subscribers
+    Unregister-Event -SourceIdentifier $outEvent.Name
+    Unregister-Event -SourceIdentifier $errEvent.Name
+}
+
+# Init Setup
 $Window.Add_Loaded({
     $TxtVersion.Text = "v$Global:CurrentVersion"
     $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
@@ -138,104 +180,89 @@ $Window.Add_Loaded({
     Write-GuiLog "Ready to optimize system storage."
 })
 
-# --- CLEANUP TASK RUNNER ---
+# Cleanup Action
 $BtnStart.Add_Click({
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
     $CleanProgress.Value = 0
 
-    # Run cleanup in a background job so the GUI doesn't freeze
-    $ScriptBlock = {
-        param($CurrentDir, $RegFiles, $LogDir, $StartingFreeSpace)
-
-        function Dispatch-Progress($Percent, $Status, $LogMsg) {
-            [PSCustomObject]@{ Percent = $Percent; Status = $Status; Log = $LogMsg }
+    # Execute step-by-step with live streaming output
+    
+    # 0. Registry Configs
+    $TxtStatus.Text = "Importing Registry configurations..."
+    $CleanProgress.Value = 10
+    Write-GuiLog "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
+    foreach ($File in $Global:RegFiles) {
+        $FilePath = Join-Path $CurrentDir $File
+        if (Test-Path $FilePath) {
+            Write-GuiLog "Applying registry file: $File"
+            Run-ProcessWithLiveOutput "reg.exe" "import `"$FilePath`""
         }
-
-        # 1. Importing Registry Configurations
-        Dispatch-Progress 10 "Importing registry configurations..." "Importing Registry Configurations..."
-        foreach ($File in $RegFiles) {
-            $FilePath = Join-Path $CurrentDir $File
-            if (Test-Path $FilePath) {
-                $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
-                if ($proc.ExitCode -eq 0) {
-                    Dispatch-Progress 15 "Registry set: $File" "  > Applied: $File"
-                }
-            }
-        }
-
-        # 2. Clear Temp Folders
-        Dispatch-Progress 30 "Clearing temporary files..." "[1/5] Clearing temporary files and logs..."
-        $TargetFolders = @(
-            "C:\Windows\Temp\*",
-            "C:\Windows\Prefetch\*",
-            "C:\Windows\SoftwareDistribution\Download\*",
-            "$([System.IO.Path]::GetTempPath())*",
-            "C:\Intel",
-            "C:\PerfLogs"
-        )
-        foreach ($Path in $TargetFolders) {
-            if (Test-Path $Path) {
-                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
-                Dispatch-Progress 40 "Cleaned $Path" "  > Removed: $Path"
-            }
-        }
-
-        # 3. Empty Recycle Bin
-        Dispatch-Progress 55 "Emptying Recycle Bin..." "[2/5] Emptying Recycle Bin..."
-        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-
-        # 4. Cleanmgr Utility
-        Dispatch-Progress 70 "Running Disk Cleanup Utility..." "[3/5] Running Cleanmgr..."
-        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-        Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
-
-        # 5. Flush DNS
-        Dispatch-Progress 85 "Flushing DNS..." "[4/5] Flushing DNS..."
-        ipconfig /flushdns | Out-Null
-
-        # 6. DISM Component Store Optimization
-        Dispatch-Progress 95 "Optimizing DISM Component Store..." "[5/5] Running DISM Cleanup..."
-        Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart | Out-Null
-
-        # Final Calculations
-        $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-        $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
-        
-        $ReadableSpace = if ($SpaceSavedBytes -le 0) {
-            "0 MB"
-        } elseif ($SpaceSavedBytes -gt 1GB) {
-            "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
-        } else {
-            "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
-        }
-
-        Dispatch-Progress 100 "Cleanup Complete!" "SUCCESS: Storage Reclaimed: $ReadableSpace"
-        return $ReadableSpace
     }
 
-    # Asynchronous Execution with Event Subscriptions
-    $powershell = [powershell]::Create().AddScript($ScriptBlock).AddArgument($CurrentDir).AddArgument($Global:RegFiles).AddArgument($Global:LogDir).AddArgument($Global:StartingFreeSpace)
-    
-    $asyncResult = $powershell.BeginInvoke()
-    
-    # UI Monitor Timer to update progress asynchronously
-    $timer = New-Object System.Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(200)
-    $timer.Add_Tick({
-        if ($asyncResult.IsCompleted) {
-            $timer.Stop()
-            $Result = $powershell.EndInvoke($asyncResult)
-            $powershell.Dispose()
-
-            $TxtReclaimed.Text = $Result
-            $TxtStatus.Text = "Optimization complete!"
-            $BtnStart.Content = "Finished"
-            $CleanProgress.Value = 100
+    # 1. Clear Temp Files
+    $TxtStatus.Text = "Clearing temporary files..."
+    $CleanProgress.Value = 25
+    Write-GuiLog "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
+    $TargetFolders = @(
+        "C:\Windows\Temp\*",
+        "C:\Windows\Prefetch\*",
+        "C:\Windows\SoftwareDistribution\Download\*",
+        "$([System.IO.Path]::GetTempPath())*",
+        "C:\Intel",
+        "C:\PerfLogs"
+    )
+    foreach ($Path in $TargetFolders) {
+        if (Test-Path $Path) {
+            Write-GuiLog "Deleting files in: $Path"
+            Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
         }
-    })
-    $timer.Start()
+    }
+
+    # 2. Recycle Bin
+    $TxtStatus.Text = "Emptying Recycle Bin..."
+    $CleanProgress.Value = 45
+    Write-GuiLog "=== [2/5] EMPTYING RECYCLE BIN ==="
+    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+    Write-GuiLog "Recycle bin emptied."
+
+    # 3. Disk Cleanup Utility
+    $TxtStatus.Text = "Running Disk Cleanup Utility..."
+    $CleanProgress.Value = 60
+    Write-GuiLog "=== [3/5] RUNNING CLEANMGR UTILITY ==="
+    $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+    Run-ProcessWithLiveOutput "cleanmgr.exe" $CleanParam
+
+    # 4. Flush DNS
+    $TxtStatus.Text = "Flushing DNS Cache..."
+    $CleanProgress.Value = 75
+    Write-GuiLog "=== [4/5] FLUSHING DNS CACHE ==="
+    Run-ProcessWithLiveOutput "ipconfig.exe" "/flushdns"
+
+    # 5. DISM Optimization
+    $TxtStatus.Text = "Optimizing DISM Component Store..."
+    $CleanProgress.Value = 85
+    Write-GuiLog "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
+    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart"
+
+    # Final Calculation
+    $CleanProgress.Value = 100
+    $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+    $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
+    
+    $ReadableSpace = if ($SpaceSavedBytes -le 0) {
+        "0 MB"
+    } elseif ($SpaceSavedBytes -gt 1GB) {
+        "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
+    } else {
+        "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
+    }
+
+    $TxtReclaimed.Text = $ReadableSpace
+    $TxtStatus.Text = "Optimization complete!"
+    $BtnStart.Content = "Finished"
+    Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
 })
 
-# Launch Modern Window
+# Display Window
 $Window.ShowDialog() | Out-Null
