@@ -65,7 +65,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
-        <!-- Reusable Style for Profile Buttons with Hover and Disabled States -->
+        <!-- Reusable Style for Profile Buttons with Border Template -->
         <Style x:Key="ProfileButtonStyle" TargetType="Button">
             <Setter Property="Template">
                 <Setter.Value>
@@ -74,26 +74,6 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- Hover Trigger for Active Profile (Blue) -->
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsMouseOver" Value="True"/>
-                                    <Condition Property="IsEnabled" Value="True"/>
-                                    <Condition Property="Background" Value="#007ACC"/>
-                                </MultiTrigger.Conditions>
-                                <Setter TargetName="border" Property="Background" Value="#0098FF"/>
-                            </MultiTrigger>
-                            <!-- Hover Trigger for Inactive Profile (Dark Grey) -->
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsMouseOver" Value="True"/>
-                                    <Condition Property="IsEnabled" Value="True"/>
-                                    <Condition Property="Background" Value="#2D2D30"/>
-                                </MultiTrigger.Conditions>
-                                <Setter TargetName="border" Property="Background" Value="#3E3E42"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
-                            </MultiTrigger>
-                            <!-- Disabled Trigger during Cleanup -->
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}"/>
                                 <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
@@ -306,12 +286,16 @@ $ChkFlushDNS        = $Window.FindName("ChkFlushDNS")
 $ChkDism            = $Window.FindName("ChkDism")
 
 # Brushes for Profile Highlighting
-$BrushActiveBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
-$BrushInactiveBG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
-$BrushActiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
-$BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
+$BrushActiveBG      = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
+$BrushActiveHover   = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0098FF")
+$BrushInactiveBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
+$BrushInactiveHover = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3E3E42")
 
-$Global:IsUpdatingProfile = $false
+$BrushActiveFG      = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
+$BrushInactiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
+
+$Global:CurrentProfileName = "Default"
+$Global:IsUpdatingProfile  = $false
 
 function Save-LogAndMaintainHistory {
     try {
@@ -341,6 +325,8 @@ function Save-LogAndMaintainHistory {
 }
 
 function Set-ActiveProfileButton ($Profile) {
+    $Global:CurrentProfileName = $Profile
+
     $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
     $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
 
@@ -364,6 +350,39 @@ function Evaluate-CurrentProfile {
     else {
         Set-ActiveProfileButton "Custom"
     }
+}
+
+# Attach Profile Hover Effects (MouseEnter / MouseLeave)
+$ProfileButtons = @(
+    @{ Control = $BtnProfileDefault; Name = "Default" },
+    @{ Control = $BtnProfileServer;  Name = "Server"  },
+    @{ Control = $BtnProfileCustom;  Name = "Custom"  }
+)
+
+foreach ($Item in $ProfileButtons) {
+    $Btn  = $Item.Control
+    $Name = $Item.Name
+
+    $Btn.Add_MouseEnter({
+        if (-not $BtnStart.IsEnabled) { return }
+        if ($Global:CurrentProfileName -eq $Name) {
+            $this.Background = $BrushActiveHover
+        } else {
+            $this.Background = $BrushInactiveHover
+            $this.Foreground = $BrushActiveFG
+        }
+    })
+
+    $Btn.Add_MouseLeave({
+        if (-not $BtnStart.IsEnabled) { return }
+        if ($Global:CurrentProfileName -eq $Name) {
+            $this.Background = $BrushActiveBG
+            $this.Foreground = $BrushActiveFG
+        } else {
+            $this.Background = $BrushInactiveBG
+            $this.Foreground = $BrushInactiveFG
+        }
+    })
 }
 
 # Attach Checkbox Change Event Handlers
