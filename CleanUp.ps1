@@ -110,7 +110,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </ScrollViewer>
         </Border>
 
-        <!-- Reclaimed Storage Box (Moved Underneath Console) -->
+        <!-- Reclaimed Storage Box -->
         <Border Grid.Row="3" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -297,7 +297,7 @@ function Check-ForUpdates {
     }
 }
 
-# Real-Time Unbuffered Output Process Runner (Supports DISM & Cleanmgr Streams)
+# Real-Time Unbuffered Output Process Runner (Real-Time DISM Progress Streaming)
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $FilePath
@@ -311,27 +311,24 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $process.StartInfo = $pinfo
     $process.Start() | Out-Null
 
-    # Continuous Stream Reader loop to capture raw character output before newlines
     $stdOut = $process.StandardOutput
-    $stdErr = $process.StandardError
-
     $lineBuffer = ""
 
     while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
-        if ($stdOut.Peek() -ge 0) {
-            $char = [char]$stdOut.Read()
+        $readVal = $stdOut.Read()
+        if ($readVal -ge 0) {
+            $char = [char]$readVal
             if ($char -eq "`n" -or $char -eq "`r") {
-                if (-not [string]::IsNullOrWhiteSpace($lineBuffer)) {
-                    Write-GuiLog $lineBuffer.Trim()
-                    $lineBuffer = ""
+                $cleanText = $lineBuffer.Trim()
+                if (-not [string]::IsNullOrWhiteSpace($cleanText)) {
+                    Write-GuiLog $cleanText
                 }
+                $lineBuffer = ""
             } else {
                 $lineBuffer += $char
             }
-        } else {
-            [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 50
         }
+        [System.Windows.Forms.Application]::DoEvents()
     }
 
     if (-not [string]::IsNullOrWhiteSpace($lineBuffer)) {
