@@ -30,7 +30,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Myles Mattlock CleanUp Tool" Height="720" Width="960" 
-        WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
+        WindowStartupLocation="CenterScreen" Background="#122D38" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="25">
         <Grid.RowDefinitions>
@@ -55,7 +55,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,20,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#00E5FF"/>
+                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#122D38"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
                 
@@ -337,7 +337,7 @@ $Window.Add_Loaded({
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         # DWMWA_CAPTION_COLOR = 35
         $CaptionAttr = 35
-        # COLORREF format in hex (BGR): 0x00382D12 represents #122D38 (Very dark blue with a subtle green-teal tint)
+        # COLORREF format in hex (BGR): 0x00382D12 represents #122D38
         $DarkTealColor = 0x00382D12 
         [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
