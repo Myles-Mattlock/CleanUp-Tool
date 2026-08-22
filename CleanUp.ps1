@@ -229,7 +229,7 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 # Init Setup
 $Window.Add_Loaded({
     # --- Load Header Logo Image ---
-    $LogoPath = Join-Path $CurrentDir "logo.png"
+    $LogoPath = Join-Path $CurrentDir "logo.ico"
     if (Test-Path $LogoPath) {
         try {
             $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -237,7 +237,7 @@ $Window.Add_Loaded({
             $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
             $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
             $bitmap.EndInit()
-            $ImgLogo.Source = ./icon.ico
+            $ImgLogo.Source = $bitmap
         } catch {
             Write-GuiLog "Warning: Could not load logo image."
         }
