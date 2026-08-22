@@ -230,6 +230,33 @@ $BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 
 $Global:IsUpdatingProfile = $false
 
+function Save-LogAndMaintainHistory {
+    try {
+        if (-not (Test-Path $Global:LogDir)) {
+            New-Item -Path $Global:LogDir -ItemType Directory -Force | Out-Null
+        }
+
+        # Save current session terminal log
+        $TimeStamp = (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
+        $LogFilePath = Join-Path $Global:LogDir "Cleanup_$TimeStamp.log"
+        $TxtLog.Text | Out-File -FilePath $LogFilePath -Encoding utf8 -Force
+
+        Write-GuiLog "Log saved to: $LogFilePath"
+
+        # Rotate logs to retain only the 5 newest files
+        $LogFiles = Get-ChildItem -Path $Global:LogDir -Filter "Cleanup_*.log" | Sort-Object CreationTime -Descending
+        if ($LogFiles.Count -gt 5) {
+            $LogsToDelete = $LogFiles | Select-Object -Skip 5
+            foreach ($OldLog in $LogsToDelete) {
+                Remove-Item $OldLog.FullName -Force -ErrorAction SilentlyContinue
+                Write-GuiLog "Purged old log file: $($OldLog.Name)"
+            }
+        }
+    } catch {
+        Write-GuiLog "Note: Could not save log to disk."
+    }
+}
+
 function Set-ActiveProfileButton ($Profile) {
     $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
     $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
@@ -584,7 +611,7 @@ $BtnStart.Add_Click({
 
         $isDone = $false
         if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or ($Global:AsyncResult -and $Global:AsyncResult.IsCompleted)) {
-            # Ensure output queues are fully flushed before tearing down
+            # Flush output queues before finishing
             while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
             while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
                 $CleanProgress.Value = $prog.Value
@@ -619,6 +646,9 @@ $BtnStart.Add_Click({
             $ChkDism.IsEnabled           = $true
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
+            
+            # Automatically save the session log and trim log history to 5 files
+            Save-LogAndMaintainHistory
         }
     })
 
