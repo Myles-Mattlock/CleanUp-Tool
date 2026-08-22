@@ -11,7 +11,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.0" 
+$Global:CurrentVersion = "2.0.1" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
@@ -39,14 +39,20 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         <Border Grid.Row="0" Background="#252526" CornerRadius="8" Padding="15" Margin="0,0,0,15">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
+
+                <!-- Header Logo -->
+                <Image x:Name="icon.ico" Grid.Column="0" Width="42" Height="42" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="System CleanUp Dashboard" FontSize="20" FontWeight="Bold" Foreground="#00E5FF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="1" Text="v2.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
+                
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v2.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
             </Grid>
         </Border>
 
@@ -109,6 +115,7 @@ $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
 # Map UI Controls
+$ImgLogo         = $Window.FindName("ImgLogo")
 $TxtVersion      = $Window.FindName("TxtVersion")
 $TxtInitialSpace = $Window.FindName("TxtInitialSpace")
 $TxtReclaimed    = $Window.FindName("TxtReclaimed")
@@ -221,6 +228,21 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
 # Init Setup
 $Window.Add_Loaded({
+    # --- Load Header Logo Image ---
+    $LogoPath = Join-Path $CurrentDir "logo.png"
+    if (Test-Path $LogoPath) {
+        try {
+            $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bitmap.BeginInit()
+            $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
+            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmap.EndInit()
+            $ImgLogo.Source = $bitmap
+        } catch {
+            Write-GuiLog "Warning: Could not load logo image."
+        }
+    }
+
     $TxtVersion.Text = "v$Global:CurrentVersion"
     $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
     $Global:StartingFreeSpace = $Drive.FreeSpace
