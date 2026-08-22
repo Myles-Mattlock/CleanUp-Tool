@@ -45,7 +45,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 </Grid.ColumnDefinitions>
 
                 <!-- Header Logo -->
-                <Image x:Name="icon.ico" Grid.Column="0" Width="42" Height="42" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
+                <Image x:Name="ImgLogo" Grid.Column="0" Width="42" Height="42" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="System CleanUp Dashboard" FontSize="20" FontWeight="Bold" Foreground="#00E5FF"/>
@@ -237,7 +237,7 @@ $Window.Add_Loaded({
             $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
             $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
             $bitmap.EndInit()
-            $ImgLogo.Source = $bitmap
+            $ImgLogo.Source = ./icon.ico
         } catch {
             Write-GuiLog "Warning: Could not load logo image."
         }
