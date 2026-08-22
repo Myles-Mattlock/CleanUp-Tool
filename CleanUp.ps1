@@ -211,12 +211,26 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
             <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" 
-                    Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
-                <Button.Resources>
-                    <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="6"/>
+                    Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="border" Background="#007ACC" CornerRadius="6">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter TargetName="border" Property="Background" Value="#444444"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
-                </Button.Resources>
+                </Button.Style>
             </Button>
         </Grid>
     </Grid>
@@ -472,7 +486,6 @@ $BtnStart.Add_Click({
 
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
-    $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#d7e41c")
     $CleanProgress.Value = 0
     $TxtProgressPercent.Text = "0%"
     
@@ -667,7 +680,6 @@ $BtnStart.Add_Click({
             # Re-enable controls
             $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
-            $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
 
             $BtnProfileDefault.IsEnabled = $true
             $BtnProfileServer.IsEnabled  = $true
