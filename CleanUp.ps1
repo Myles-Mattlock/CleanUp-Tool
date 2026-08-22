@@ -11,7 +11,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "2.0.1" 
+$Global:CurrentVersion = "3.0.0" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
@@ -52,7 +52,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
                 </StackPanel>
                 
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v2.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
             </Grid>
         </Border>
 
