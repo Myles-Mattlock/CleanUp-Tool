@@ -23,10 +23,10 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock System CleanUp" Height="580" Width="720" 
+        Title="Myles Mattlock CleanUp Tool" Height="720" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
-    <Grid Margin="20">
+    <Grid Margin="25">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -36,7 +36,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Border Grid.Row="0" Background="#252526" CornerRadius="8" Padding="15" Margin="0,0,0,15">
+        <Border Grid.Row="0" Background="#252526" CornerRadius="8" Padding="20" Margin="0,0,0,20">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -45,76 +45,76 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left Logo (Further 50% Bigger: 78.75x78.75) -->
-                <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
+                <!-- Left Logo -->
+                <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,20,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="20" FontWeight="Bold" Foreground="#00E5FF"/>
-                    <TextBlock Text="Optimize storage, system files, and component health" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#00E5FF"/>
+                    <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
                 
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold" Margin="0,0,15,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
 
-                <!-- Right Logo (Further 50% Bigger: 78.75x78.75) -->
+                <!-- Right Logo -->
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
         <!-- Stats & Health Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,15">
+        <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Initial Free Space -->
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="10">
+            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
-                    <TextBlock Text="INITIAL FREE" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="16" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,4,0,0"/>
+                    <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Reclaimed Storage -->
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="10">
+            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
-                    <TextBlock Text="RECLAIMED" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="16" FontWeight="Bold" Foreground="#00FF66" Margin="0,4,0,0"/>
+                    <TextBlock Text="RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Drive Wear / Health -->
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="10">
+            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
-                    <TextBlock Text="DRIVE HEALTH" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="16" FontWeight="Bold" Foreground="#00E5FF" Margin="0,4,0,0"/>
+                    <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Drive Temperature -->
-            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="10">
+            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
-                    <TextBlock Text="TEMP" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="16" FontWeight="Bold" Foreground="#FFCC00" Margin="0,4,0,0"/>
+                    <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
         </Grid>
 
         <!-- Output Log Terminal -->
-        <Border Grid.Row="2" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="10">
+        <Border Grid.Row="2" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
             <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                 <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" 
-                         FontFamily="Consolas" FontSize="12" IsReadOnly="True" TextWrapping="Wrap"/>
+                         FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap"/>
             </ScrollViewer>
         </Border>
 
         <!-- Progress Bar -->
-        <ProgressBar x:Name="CleanProgress" Grid.Row="3" Height="8" Margin="0,15,0,15" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+        <ProgressBar x:Name="CleanProgress" Grid.Row="3" Height="10" Margin="0,20,0,20" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
 
         <!-- Action Controls -->
         <Grid Grid.Row="4">
@@ -122,12 +122,12 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA"/>
-            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="140" Height="36" 
-                    Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
+            <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
+            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" 
+                    Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
                 <Button.Resources>
                     <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="4"/>
+                        <Setter Property="CornerRadius" Value="6"/>
                     </Style>
                 </Button.Resources>
             </Button>
