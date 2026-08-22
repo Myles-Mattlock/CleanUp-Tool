@@ -278,9 +278,10 @@ $BtnStart.Add_Click({
 
     $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     $Global:ProgressQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $Global:FinishedQueue = [System.Collections.Concurrent.ConcurrentQueue[bool]]::new()
 
     $ScriptBlock = {
-        param($CurrentDir, $RegFiles, $LogQueue, $ProgressQueue)
+        param($CurrentDir, $RegFiles, $LogQueue, $ProgressQueue, $FinishedQueue)
 
         function Send-Log ($msg) {
             if (-not [string]::IsNullOrWhiteSpace($msg)) {
@@ -366,6 +367,7 @@ $BtnStart.Add_Click({
         Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
 
         Send-Progress 100 "Optimization Complete!"
+        $FinishedQueue.Enqueue($true)
     }
 
     $Runspace = [runspacefactory]::CreateRunspace()
@@ -377,11 +379,12 @@ $BtnStart.Add_Click({
     [void]$PowerShell.AddArgument($Global:RegFiles)
     [void]$PowerShell.AddArgument($Global:LogQueue)
     [void]$PowerShell.AddArgument($Global:ProgressQueue)
+    [void]$PowerShell.AddArgument($Global:FinishedQueue)
     
     $AsyncResult = $PowerShell.BeginInvoke()
 
     $Timer = New-Object System.Windows.Threading.DispatcherTimer
-    $Timer.Interval = [TimeSpan]::FromMilliseconds(50)
+    $Timer.Interval = [TimeSpan]::FromMilliseconds(100)
 
     $Timer.Add_Tick({
         $msg = ""
@@ -396,7 +399,8 @@ $BtnStart.Add_Click({
             $TxtStatus.Text = $prog.Status
         }
 
-        if ($AsyncResult.IsCompleted) {
+        $isDone = $false
+        if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or $AsyncResult.IsCompleted) {
             $Timer.Stop()
             try { $PowerShell.EndInvoke($AsyncResult) } catch {}
             $PowerShell.Dispose()
