@@ -451,11 +451,16 @@ $BtnStart.Add_Click({
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Recycle bin emptied."
         }
 
+        # 3. Disk Cleanup Utility (Strict Original Logic)
         if ($SelectedTasks.DoCleanmgr) {
-            Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Running Disk Cleanup Utility..."
+            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $StartPercent "Running Disk Cleanup Utility..."
             Send-Log "=== RUNNING CLEANMGR UTILITY ==="
-            Run-SilentProcess "cleanmgr.exe" (Test-Path "C:\Windows.old" ? "/SAGERUN:1" : "/SAGERUN:2")
-            $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Disk cleanup complete."
+            $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+            Run-SilentProcess "cleanmgr.exe" $CleanParam
+            $CompletedTasks++
+            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
+            Send-Progress $EndPercent "Disk cleanup complete."
         }
 
         if ($SelectedTasks.DoFlushDNS) {
