@@ -1,10 +1,12 @@
 # --- 1. Administrator Check (Self-Elevating) ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $ScriptPath = $MyInvocation.MyCommand.Definition
-    if ([string]::IsNullOrEmpty($ScriptPath)) {
-        $ScriptPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
+        Start-Process -FilePath $ExePath -Verb RunAs
+    } else {
+        $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
     }
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
     Exit
 }
 
@@ -46,8 +48,14 @@ $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
-$CurrentDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
+# Safe Path Resolver (Handles both .ps1 and compiled .exe)
+if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like "*.exe" -and [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -notlike "*powershell*") {
+    $CurrentDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+} elseif ($PSCommandPath) {
+    $CurrentDir = Split-Path -Parent $PSCommandPath
+} else {
+    $CurrentDir = Get-Location
+}
 
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
