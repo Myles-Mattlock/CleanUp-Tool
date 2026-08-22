@@ -45,8 +45,8 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left Logo -->
-                <Image x:Name="ImgLogo" Grid.Column="0" Width="42" Height="42" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
+                <!-- Left Logo (25% Bigger: 52.5x52.5) -->
+                <Image x:Name="ImgLogo" Grid.Column="0" Width="52.5" Height="52.5" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="20" FontWeight="Bold" Foreground="#00E5FF"/>
@@ -55,8 +55,8 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 
                 <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold" Margin="0,0,15,0"/>
 
-                <!-- Right Logo -->
-                <Image x:Name="ImgLogoRight" Grid.Column="3" Width="42" Height="42" VerticalAlignment="Center" Stretch="Uniform"/>
+                <!-- Right Logo (25% Bigger: 52.5x52.5) -->
+                <Image x:Name="ImgLogoRight" Grid.Column="3" Width="52.5" Height="52.5" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
