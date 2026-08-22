@@ -123,6 +123,7 @@ if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | 
 
 Write-Host "`n--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
 Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
+Get-PhysicalDisk | Get-StorageReliabilityCounter | Select-Object DeviceId, Wear, Temperature, ReadErrorsUncorrected, WriteErrorsUncorrected
 
 # Run the update check
 Check-ForUpdates
