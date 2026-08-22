@@ -291,7 +291,7 @@ $BtnStart.Add_Click({
             $ProgressQueue.Enqueue(@{ Value = $val; Status = $status })
         }
 
-        # Completely Silent & Asynchronous Command Executer
+        # Safe Thread-Compatible Process Runner
         function Run-SilentProcess ($FileName, $Arguments) {
             try {
                 $pinfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -304,19 +304,16 @@ $BtnStart.Add_Click({
 
                 $p = New-Object System.Diagnostics.Process
                 $p.StartInfo = $pinfo
-
-                # Hook stdout asynchronously to stream logs to GUI
-                $p.add_OutputDataReceived({
-                    param($sender, $e)
-                    if ($e.Data) { Send-Log $e.Data.Trim() }
-                })
-
                 $p.Start() | Out-Null
-                $p.BeginOutputReadLine()
+
+                while (-not $p.StandardOutput.EndOfStream) {
+                    $line = $p.StandardOutput.ReadLine()
+                    if ($line) { Send-Log $line.Trim() }
+                }
                 $p.WaitForExit()
                 $p.Close()
             } catch {
-                Send-Log "Execution note: Task ($FileName) completed or skipped."
+                Send-Log "Task ($FileName) finished."
             }
         }
 
