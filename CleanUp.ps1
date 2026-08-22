@@ -1,217 +1,241 @@
-# --- 0. FORCE WINDOWS TERMINAL LAUNCH FOR EXE ---
-if ($null -eq $env:WT_SESSION) {
-    if (Get-Command "wt.exe" -ErrorAction SilentlyContinue) {
-        # Get the literal path of the running .exe file
-        $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        
-        # Relaunch the EXE inside Windows Terminal and exit the legacy console
-        Start-Process "wt.exe" -ArgumentList "`"$ExePath`""
-        Exit
-    }
-}
-# --------------------------------------------------------
-
-# 1. Administrator Check (Self-Elevating Fallback)
+# --- 1. Administrator Check (Self-Elevating) ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-    # Automatically prompts for UAC admin rights rather than just crashing
-    Start-Process "$ExePath" -Verb RunAs
+    $ScriptPath = $MyInvocation.MyCommand.Definition
+    if ([string]::IsNullOrEmpty($ScriptPath)) {
+        $ScriptPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    }
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
     Exit
 }
 
-# Load GUI Assemblies
-Add-Type -AssemblyName System.Windows.Forms
-
-# 2. Executable Path Logic
-$CurrentDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
-if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
-
-# Logo
-# Clear the host to give it a clean slate
-Clear-Host
-
-# Set the output encoding to UTF-8 to ensure characters render perfectly
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-# Colors mapping to your original design
-$Teal = "DarkCyan"
-$White = "White"
-
-# The Custom Cleaning Icon Banner
-Write-Host "               ,▄▄██████████▄▄,               " -ForegroundColor $Teal
-Write-Host "            ▄████▀▀▀        ▀▀████▄           " -ForegroundColor $Teal
-Write-Host "          ████▀                  ▀███▄        " -ForegroundColor $Teal
-Write-Host "        ▄███▀          ▓▓          ▀███▄      " -ForegroundColor $Teal
-Write-Host "       ███▀           ▓▓             ▀███     " -ForegroundColor $Teal
-Write-Host "      ███            ▓▓               ███     " -ForegroundColor $Teal
-Write-Host "     ███            ▓▓                 ███    " -ForegroundColor $Teal
-Write-Host "     ███          ▄███▄         ░░     ███    " -ForegroundColor $Teal
-Write-Host "     ███   •     ███████       ░░░     ███    " -ForegroundColor $Teal
-Write-Host "     ███  •●    █████████     ══       ███    " -ForegroundColor $Teal
-Write-Host "     ███ ▄▄█▄  ███████████   ═══       ███    " -ForegroundColor $Teal
-Write-Host "      ███ ▀▀  █████████████           ███     " -ForegroundColor $Teal
-Write-Host "       ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███     " -ForegroundColor $Teal
-Write-Host "        ▀███▄ ════════════════════ ▄███▀      " -ForegroundColor $Teal
-Write-Host "          ▀████▄                ▄████▀        " -ForegroundColor $Teal
-Write-Host "            ▀██████████████████████▀          " -ForegroundColor $Teal
-Write-Host "               ▀▀▀████████████▀▀▀             " -ForegroundColor $Teal
-
-Write-Host ""
-# Subtitles matching your screenshot style
-Write-Host "===== Myles Mattlock CleanUp =====" -ForegroundColor $White
+# Add Required WPF & GUI Assemblies
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
-$CurrentVersion = "2.0.1" 
-$RepoName = "Myles-Mattlock/CleanUp-Tool"
-$RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
-$LogDir = "C:\Program Files\SystemCleanUp\Logs"
-# ---------------------
+$Global:CurrentVersion = "2.0.1" 
+$Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
+$Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
+$Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
-# --- UPDATE CHECKER (STABLE ONLY) ---
-function Check-ForUpdates {
-    Write-Host "Checking for updates..." -ForegroundColor Gray
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
-        $Url = "https://api.github.com/repos/$RepoName/releases"
+$CurrentDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
-        # Fetch releases and filter out anything marked as a Prerelease (Beta)
-        $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
-        $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
+# --- XAML UI DESIGN ---
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Myles Mattlock CleanUp Tool" Height="500" Width="700" 
+        WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
+        ResizeMode="CanMinimize">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-        $LocalVersion = [version]($CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
-        $UpdateFound = $null
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#252526" CornerRadius="8" Padding="15" Margin="0,0,0,15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="System CleanUp Dashboard" FontSize="20" FontWeight="Bold" Foreground="#00E5FF"/>
+                    <TextBlock Text="Optimize storage, system files, and component health" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtVersion" Grid.Column="1" Text="v2.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
+            </Grid>
+        </Border>
 
-        foreach ($Rel in $StableReleases) {
-            $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
+        <!-- Stats Bar -->
+        <Grid Grid.Row="1" Margin="0,0,0,15">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-            if ($RemoteVersion -gt $LocalVersion) {
-                $UpdateFound = $Rel
-                break 
+            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="12">
+                <StackPanel>
+                    <TextBlock Text="INITIAL FREE SPACE" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="12">
+                <StackPanel>
+                    <TextBlock Text="RECLAIMED STORAGE" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Output Log Terminal -->
+        <Border Grid.Row="2" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="10">
+            <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
+                <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" 
+                         FontFamily="Consolas" FontSize="12" IsReadOnly="True" TextWrapping="Wrap"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Progress Bar -->
+        <ProgressBar x:Name="CleanProgress" Grid.Row="3" Height="8" Margin="0,15,0,15" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+
+        <!-- Action Controls -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA"/>
+            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="140" Height="36" 
+                    Background="#007ACC" Foreground="White" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+            </Button>
+        </Grid>
+    </Grid>
+</Window>
+"@
+
+# Read XAML
+$reader = (New-Object System.Xml.XmlNodeReader $xaml)
+$Window = [Windows.Markup.XamlReader]::Load($reader)
+
+# Connect UI Controls to PowerShell Variables
+$TxtVersion      = $Window.FindName("TxtVersion")
+$TxtInitialSpace = $Window.FindName("TxtInitialSpace")
+$TxtReclaimed    = $Window.FindName("TxtReclaimed")
+$TxtLog          = $Window.FindName("TxtLog")
+$LogScroll       = $Window.FindName("LogScroll")
+$CleanProgress   = $Window.FindName("CleanProgress")
+$TxtStatus       = $Window.FindName("TxtStatus")
+$BtnStart        = $Window.FindName("BtnStart")
+
+# Helper function to write logs safely to UI
+function Write-GuiLog ($Message) {
+    $TxtLog.Dispatcher.Invoke([Action]{
+        $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
+        $LogScroll.ScrollToEnd()
+    })
+}
+
+# --- INITIALIZATION LOGIC ---
+$Window.Add_Loaded({
+    $TxtVersion.Text = "v$Global:CurrentVersion"
+    $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+    $Global:StartingFreeSpace = $Drive.FreeSpace
+    $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
+    
+    Write-GuiLog "System Cleanup Tool Initialized."
+    Write-GuiLog "Ready to optimize system storage."
+})
+
+# --- CLEANUP TASK RUNNER ---
+$BtnStart.Add_Click({
+    $BtnStart.IsEnabled = $false
+    $BtnStart.Content = "Cleaning..."
+    $CleanProgress.Value = 0
+
+    # Run cleanup in a background job so the GUI doesn't freeze
+    $ScriptBlock = {
+        param($CurrentDir, $RegFiles, $LogDir, $StartingFreeSpace)
+
+        function Dispatch-Progress($Percent, $Status, $LogMsg) {
+            [PSCustomObject]@{ Percent = $Percent; Status = $Status; Log = $LogMsg }
+        }
+
+        # 1. Importing Registry Configurations
+        Dispatch-Progress 10 "Importing registry configurations..." "Importing Registry Configurations..."
+        foreach ($File in $RegFiles) {
+            $FilePath = Join-Path $CurrentDir $File
+            if (Test-Path $FilePath) {
+                $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
+                if ($proc.ExitCode -eq 0) {
+                    Dispatch-Progress 15 "Registry set: $File" "  > Applied: $File"
+                }
             }
         }
 
-        if ($UpdateFound) {
-            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            Write-Host " [!] NEW STABLE UPDATE AVAILABLE: $($UpdateFound.tag_name)" -ForegroundColor White -BackgroundColor Blue
-            Write-Host " You are currently running: v$CurrentVersion" -ForegroundColor Gray
-            Write-Host " Download: $($UpdateFound.html_url)" -ForegroundColor Cyan
-            Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-            
-            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show("A new stable version ($($UpdateFound.tag_name)) is available.`n`nWould you like to download it now?", "Update Available", "YesNo", "Information", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
-            
-            if ($UpdateChoice -eq "Yes") { 
-                Start-Process $UpdateFound.html_url
-                Write-Host "Redirecting to download page. Closing app..." -ForegroundColor Yellow
-                Start-Sleep -Seconds 2
-                Exit 
+        # 2. Clear Temp Folders
+        Dispatch-Progress 30 "Clearing temporary files..." "[1/5] Clearing temporary files and logs..."
+        $TargetFolders = @(
+            "C:\Windows\Temp\*",
+            "C:\Windows\Prefetch\*",
+            "C:\Windows\SoftwareDistribution\Download\*",
+            "$([System.IO.Path]::GetTempPath())*",
+            "C:\Intel",
+            "C:\PerfLogs"
+        )
+        foreach ($Path in $TargetFolders) {
+            if (Test-Path $Path) {
+                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+                Dispatch-Progress 40 "Cleaned $Path" "  > Removed: $Path"
             }
+        }
+
+        # 3. Empty Recycle Bin
+        Dispatch-Progress 55 "Emptying Recycle Bin..." "[2/5] Emptying Recycle Bin..."
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+
+        # 4. Cleanmgr Utility
+        Dispatch-Progress 70 "Running Disk Cleanup Utility..." "[3/5] Running Cleanmgr..."
+        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+        Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
+
+        # 5. Flush DNS
+        Dispatch-Progress 85 "Flushing DNS..." "[4/5] Flushing DNS..."
+        ipconfig /flushdns | Out-Null
+
+        # 6. DISM Component Store Optimization
+        Dispatch-Progress 95 "Optimizing DISM Component Store..." "[5/5] Running DISM Cleanup..."
+        Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart | Out-Null
+
+        # Final Calculations
+        $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+        $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
+        
+        $ReadableSpace = if ($SpaceSavedBytes -le 0) {
+            "0 MB"
+        } elseif ($SpaceSavedBytes -gt 1GB) {
+            "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
         } else {
-            Write-Host " You are running the latest stable version (v$CurrentVersion)." -ForegroundColor DarkGreen
+            "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
         }
-    } catch {
-        Write-Host " Note: Update check skipped (Connection issue)." -ForegroundColor DarkGray
+
+        Dispatch-Progress 100 "Cleanup Complete!" "SUCCESS: Storage Reclaimed: $ReadableSpace"
+        return $ReadableSpace
     }
-}
 
-# Capture Starting Disk Space
-$Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-$StartingFreeSpace = $Drive.FreeSpace
-
-# Ensure Log directory exists
-if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
-
-Write-Host "`n--- Windows System Cleanup Tool ---" -ForegroundColor Cyan
-Write-Host "Initial Free Space: $([Math]::Round($StartingFreeSpace / 1GB, 2)) GB" -ForegroundColor Gray
-Get-PhysicalDisk | Get-StorageReliabilityCounter | Select-Object DeviceId, Wear, Temperature, ReadErrorsUncorrected, WriteErrorsUncorrected
-
-# Run the update check
-Check-ForUpdates
-
-# 3. Import Registry Settings
-Write-Host "`n[0/5] Importing Cleanup Configurations..." -ForegroundColor Yellow
-foreach ($File in $RegFiles) {
-    $FilePath = Join-Path $CurrentDir $File
-    if (Test-Path $FilePath) {
-        $proc = Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -Wait -PassThru -WindowStyle Hidden
-        if ($proc.ExitCode -eq 0) {
-            Write-Host "  > Successfully applied: $File" -ForegroundColor Gray
-        } else {
-            Write-Warning "  > Failed to apply $File (Code: $($proc.ExitCode))"
-        }
-    } else {
-        Write-Warning "  > Registry file not found: $FilePath"
-    }
-}
-
-# 4. Confirmation Pop-up
-$PopTitle = "CleanUp Tool Confirmation"
-$PopText  = "Would you like to begin the system cleanup process now?`n`nThis will clear temp files, empty the recycle bin, and run DISM optimization?"
-$Result = [System.Windows.Forms.MessageBox]::Show($PopText, $PopTitle, "YesNo", "Question", [System.Windows.Forms.MessageBoxDefaultButton]::Button1, [System.Windows.Forms.MessageBoxOptions]::ServiceNotification)
-
-if ($Result -eq "No") {
-    Write-Host "`nOperation cancelled by user." -ForegroundColor Red
-    Start-Sleep -Seconds 2
-    Exit
-}
-
-# --- CLEANUP LOGIC ---
-$CleanupTimer = [System.Diagnostics.Stopwatch]::StartNew()
-try {
-    Write-Host "`n[1/5] Clearing temporary files and logs..." -ForegroundColor Yellow
-    $TargetFolders = @(
-        "C:\Windows\Temp\*",
-        "C:\Windows\Prefetch\*",
-        "C:\Windows\SoftwareDistribution\Download\*",
-        "$([System.IO.Path]::GetTempPath())*",
-        "C:\Intel",
-        "C:\PerfLogs"
-    )
+    # Asynchronous Execution with Event Subscriptions
+    $powershell = [powershell]::Create().AddScript($ScriptBlock).AddArgument($CurrentDir).AddArgument($Global:RegFiles).AddArgument($Global:LogDir).AddArgument($Global:StartingFreeSpace)
     
-    foreach ($Path in $TargetFolders) {
-        if (Test-Path $Path) {
-            Write-Host "  > Cleaning: $Path" -ForegroundColor Gray
-            Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    Write-Host "[2/5] Emptying Recycle Bin..." -ForegroundColor Yellow
-    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-
-    Write-Host "[3/5] Running Disk Cleanup Utility..." -ForegroundColor Yellow
-    $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-    Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -Wait
-
-    Write-Host "[4/5] Flushing DNS" -ForegroundColor Yellow
-    ipconfig /flushdns
-
-    Write-Host "[5/5] Optimizing Component Store (DISM)..." -ForegroundColor Yellow
-    Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart
-
-    $CleanupTimer.Stop()
-    $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-    $SpaceSavedBytes = $DriveEnd.FreeSpace - $StartingFreeSpace
+    $asyncResult = $powershell.BeginInvoke()
     
-    $ReadableSpace = if ($SpaceSavedBytes -le 0) {
-        "0 MB"
-    } elseif ($SpaceSavedBytes -gt 1GB) {
-        "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
-    } else {
-        "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
-    }
+    # UI Monitor Timer to update progress asynchronously
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $timer.Add_Tick({
+        if ($asyncResult.IsCompleted) {
+            $timer.Stop()
+            $Result = $powershell.EndInvoke($asyncResult)
+            $powershell.Dispose()
 
-    Write-Host "`n----------------------------------------------------------" -ForegroundColor Green
-    Write-Host " SUCCESS: Cleanup process finished!" -ForegroundColor Green
-    Write-Host " TOTAL STORAGE RECLAIMED: $ReadableSpace" -ForegroundColor White -BackgroundColor DarkGreen
-    Write-Host " TIME ELAPSED: $("{0:mm} min {0:ss} sec" -f $CleanupTimer.Elapsed)" -ForegroundColor White
-    Write-Host "----------------------------------------------------------" -ForegroundColor Green
+            $TxtReclaimed.Text = $Result
+            $TxtStatus.Text = "Optimization complete!"
+            $BtnStart.Content = "Finished"
+            $CleanProgress.Value = 100
+        }
+    })
+    $timer.Start()
+})
 
-} catch {
-    $ErrorMessage = "$(Get-Date -Format 'dd-MM-yyyy HH:mm:ss'): $($_.Exception.Message)"
-    Add-Content -Path "$LogDir\SystemCleanUpErrors.log" -Value $ErrorMessage
-    Write-Host "`nAn error occurred. See $LogDir\SystemCleanUpErrors.log" -ForegroundColor Red
-}
-
-Write-Host "Press any key to exit..."
-$null = [Console]::ReadKey($true)
-Exit
+# Launch Modern Window
+$Window.ShowDialog() | Out-Null
