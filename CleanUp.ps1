@@ -291,74 +291,67 @@ $BtnStart.Add_Click({
             $ProgressQueue.Enqueue(@{ Value = $val; Status = $status })
         }
 
-        # Safe Command Stream Executer
-        function Run-CmdStream ($Command) {
-            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-            $pinfo.FileName = "cmd.exe"
-            $pinfo.Arguments = "/c $Command"
-            $pinfo.UseShellExecute = $false
-            $pinfo.RedirectStandardOutput = $true
-            $pinfo.RedirectStandardError = $true
-            $pinfo.CreateNoWindow = $true
-
-            $p = New-Object System.Diagnostics.Process
-            $p.StartInfo = $pinfo
-            $p.Start() | Out-Null
-
-            while (-not $p.StandardOutput.EndOfStream) {
-                $line = $p.StandardOutput.ReadLine()
-                if ($line) { Send-Log $line.Trim() }
-            }
-            $p.WaitForExit()
-        }
-
         # Step 0: Registry
-        Send-Progress 10 "Importing Registry configurations..."
-        Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
-        foreach ($File in $RegFiles) {
-            $FilePath = Join-Path $CurrentDir $File
-            if (Test-Path $FilePath) {
-                Send-Log "Applying registry file: $File"
-                Run-CmdStream "reg.exe import `"$FilePath`""
+        try {
+            Send-Progress 10 "Importing Registry configurations..."
+            Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
+            foreach ($File in $RegFiles) {
+                $FilePath = Join-Path $CurrentDir $File
+                if (Test-Path $FilePath) {
+                    Send-Log "Applying registry file: $File"
+                    Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -NoNewWindow -Wait
+                }
             }
-        }
+        } catch { Send-Log "Registry step skipped/encountered issue." }
 
         # Step 1: Clear Temp Files
-        Send-Progress 25 "Clearing temporary files..."
-        Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
-        $TargetFolders = @(
-            "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
-            "C:\Windows\SoftwareDistribution\Download\*", 
-            "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
-        )
-        foreach ($Path in $TargetFolders) {
-            if (Test-Path $Path) {
-                Send-Log "Deleting files in: $Path"
-                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            Send-Progress 25 "Clearing temporary files..."
+            Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
+            $TargetFolders = @(
+                "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
+                "C:\Windows\SoftwareDistribution\Download\*", 
+                "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
+            )
+            foreach ($Path in $TargetFolders) {
+                if (Test-Path $Path) {
+                    Send-Log "Deleting files in: $Path"
+                    Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+                }
             }
-        }
+        } catch { Send-Log "Temp cleaning step skipped/encountered issue." }
 
         # Step 2: Recycle Bin
-        Send-Progress 45 "Emptying Recycle Bin..."
-        Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
-        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-        Send-Log "Recycle bin emptied."
+        try {
+            Send-Progress 45 "Emptying Recycle Bin..."
+            Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
+            Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+            Send-Log "Recycle bin emptied."
+        } catch { Send-Log "Recycle Bin step skipped/encountered issue." }
 
         # Step 3: Cleanmgr
-        Send-Progress 60 "Running Disk Cleanup Utility..."
-        Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
-        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-        Run-CmdStream "cleanmgr.exe $CleanParam"
+        try {
+            Send-Progress 60 "Running Disk Cleanup Utility..."
+            Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
+            $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+            Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -NoNewWindow -Wait
+        } catch { Send-Log "Disk cleanup step skipped/encountered issue." }
 
         # Step 4: Flush DNS
-        Send-Progress 75 "Flushing DNS Cache..."
-        Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
-        Run-CmdStream "ipconfig.exe /flushdns"
+        try {
+            Send-Progress 75 "Flushing DNS Cache..."
+            Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
+            Start-Process "ipconfig.exe" -ArgumentList "/flushdns" -NoNewWindow -Wait
+            Send-Log "DNS Cache flushed."
+        } catch { Send-Log "DNS flush step skipped/encountered issue." }
 
         # Step 5: DISM Optimization
-        Send-Progress 85 "Optimizing DISM Component Store..."
-        Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-        Run-CmdStream "Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+        try {
+            Send-Progress 85 "Optimizing DISM Component Store..."
+            Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
+            Start-Process "Dism.exe" -ArgumentList "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English" -NoNewWindow -Wait
+            Send-Log "DISM cleanup complete."
+        } catch { Send-Log "DISM step skipped/encountered issue." }
 
         Send-Progress 100 "Optimization Complete!"
     }
@@ -403,7 +396,6 @@ $BtnStart.Add_Click({
 
             $TxtReclaimed.Text = $ReadableSpace
             
-            # Re-enable button before applying WPF properties to avoid state locking
             $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
             $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
