@@ -200,40 +200,44 @@ function Get-DriveHealthDiagnostics {
         foreach ($Disk in $PhysicalDisks) {
             $Model = $Disk.FriendlyName
             $Health = $Disk.HealthStatus
+            $BusType = $Disk.BusType
+            
+            # Check if drive is Virtual (Hyper-V / Dev Drive / VM)
+            $IsVirtual = ($Model -like "*Virtual*" -or $Model -like "*dev-0*" -or $BusType -eq "Virtual" -or $Disk.Model -like "*VBOX*")
+            
+            if ($IsVirtual) {
+                Write-GuiLog "Target Drive: $Model [Virtual Drive Detected]"
+                $HealthStatusText = "Virtual Disk"
+                $TempStatusText   = "N/A (VM)"
+                $HoursStatusText  = "N/A (VM)"
+                $CyclesStatusText = "N/A (VM)"
+                continue
+            }
+
             Write-GuiLog "Target Drive: $Model - Health: $Health"
 
-            # 1. Query Reliability Counter
+            # 1. Query Reliability Counter for Physical Bare-Metal Drives
             $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
             if ($Counter) {
                 if ($Counter.Temperature -and $Counter.Temperature -gt 0) {
                     $TempStatusText = "$($Counter.Temperature) °C"
                     Write-GuiLog "  > Reliability Temp: $TempStatusText"
                 }
-                if ($Counter.Wear -ne $null) {
+                if ($Counter.Wear -ne $null -and $Counter.Wear -gt 0) {
                     $HealthStatusText = "$(100 - $Counter.Wear)% Health"
                     Write-GuiLog "  > Wear Remaining: $HealthStatusText"
                 }
+                if ($Counter.PowerOnHours -ne $null -and $Counter.PowerOnHours -gt 0) {
+                    $HoursStatusText = "$($Counter.PowerOnHours) hrs"
+                    Write-GuiLog "  > Power On Hours: $HoursStatusText"
+                }
+                if ($Counter.PowerCycleCount -ne $null -and $Counter.PowerCycleCount -gt 0) {
+                    $CyclesStatusText = "$($Counter.PowerCycleCount)"
+                    Write-GuiLog "  > Power Cycles: $CyclesStatusText"
+                }
             }
 
-            # 2. Raw NVMe Health Log Byte Parsing via Get-StorageDiagnosticInfo
-            try {
-                $Diag = Get-StorageDiagnosticInfo -PhysicalDisk $Disk -ErrorAction SilentlyContinue
-                if ($Diag -and $Diag.NVMeSmartHealthLog) {
-                    $SmartLog = $Diag.NVMeSmartHealthLog
-                    # NVMe Spec: Bytes 96-111 = Power On Hours (128-bit int, standard 64-bit lower read)
-                    # Bytes 112-127 = Power Cycles
-                    if ($SmartLog.PowerOnHours) {
-                        $HoursStatusText = "$($SmartLog.PowerOnHours) hrs"
-                        Write-GuiLog "  > NVMe Smart Power On Hours: $HoursStatusText"
-                    }
-                    if ($SmartLog.PowerCycles) {
-                        $CyclesStatusText = "$($SmartLog.PowerCycles)"
-                        Write-GuiLog "  > NVMe Smart Power Cycles: $CyclesStatusText"
-                    }
-                }
-            } catch {}
-
-            # 3. Fallback: Parse MSFT_PhysicalDisk CIM Instance directly
+            # 2. Fallback: Parse MSFT_PhysicalDisk CIM Instance directly
             if ($HoursStatusText -eq "N/A" -or $CyclesStatusText -eq "N/A") {
                 $CimDisk = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName MSFT_PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq $Model -or $_.DeviceId -eq $Disk.DeviceId }
                 if ($CimDisk) {
