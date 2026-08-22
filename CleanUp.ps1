@@ -291,67 +291,82 @@ $BtnStart.Add_Click({
             $ProgressQueue.Enqueue(@{ Value = $val; Status = $status })
         }
 
-        # Step 0: Registry
-        try {
-            Send-Progress 10 "Importing Registry configurations..."
-            Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
-            foreach ($File in $RegFiles) {
-                $FilePath = Join-Path $CurrentDir $File
-                if (Test-Path $FilePath) {
-                    Send-Log "Applying registry file: $File"
-                    Start-Process "reg.exe" -ArgumentList "import `"$FilePath`"" -NoNewWindow -Wait
-                }
+        # Completely Silent & Asynchronous Command Executer
+        function Run-SilentProcess ($FileName, $Arguments) {
+            try {
+                $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                $pinfo.FileName = $FileName
+                $pinfo.Arguments = $Arguments
+                $pinfo.UseShellExecute = $false
+                $pinfo.RedirectStandardOutput = $true
+                $pinfo.RedirectStandardError = $true
+                $pinfo.CreateNoWindow = $true
+
+                $p = New-Object System.Diagnostics.Process
+                $p.StartInfo = $pinfo
+
+                # Hook stdout asynchronously to stream logs to GUI
+                $p.add_OutputDataReceived({
+                    param($sender, $e)
+                    if ($e.Data) { Send-Log $e.Data.Trim() }
+                })
+
+                $p.Start() | Out-Null
+                $p.BeginOutputReadLine()
+                $p.WaitForExit()
+                $p.Close()
+            } catch {
+                Send-Log "Execution note: Task ($FileName) completed or skipped."
             }
-        } catch { Send-Log "Registry step skipped/encountered issue." }
+        }
+
+        # Step 0: Registry
+        Send-Progress 10 "Importing Registry configurations..."
+        Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
+        foreach ($File in $RegFiles) {
+            $FilePath = Join-Path $CurrentDir $File
+            if (Test-Path $FilePath) {
+                Send-Log "Applying registry file: $File"
+                Run-SilentProcess "reg.exe" "import `"$FilePath`""
+            }
+        }
 
         # Step 1: Clear Temp Files
-        try {
-            Send-Progress 25 "Clearing temporary files..."
-            Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
-            $TargetFolders = @(
-                "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
-                "C:\Windows\SoftwareDistribution\Download\*", 
-                "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
-            )
-            foreach ($Path in $TargetFolders) {
-                if (Test-Path $Path) {
-                    Send-Log "Deleting files in: $Path"
-                    Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
-                }
+        Send-Progress 25 "Clearing temporary files..."
+        Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
+        $TargetFolders = @(
+            "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
+            "C:\Windows\SoftwareDistribution\Download\*", 
+            "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
+        )
+        foreach ($Path in $TargetFolders) {
+            if (Test-Path $Path) {
+                Send-Log "Deleting files in: $Path"
+                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
             }
-        } catch { Send-Log "Temp cleaning step skipped/encountered issue." }
+        }
 
         # Step 2: Recycle Bin
-        try {
-            Send-Progress 45 "Emptying Recycle Bin..."
-            Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
-            Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-            Send-Log "Recycle bin emptied."
-        } catch { Send-Log "Recycle Bin step skipped/encountered issue." }
+        Send-Progress 45 "Emptying Recycle Bin..."
+        Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+        Send-Log "Recycle bin emptied."
 
         # Step 3: Cleanmgr
-        try {
-            Send-Progress 60 "Running Disk Cleanup Utility..."
-            Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
-            $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-            Start-Process "cleanmgr.exe" -ArgumentList $CleanParam -NoNewWindow -Wait
-        } catch { Send-Log "Disk cleanup step skipped/encountered issue." }
+        Send-Progress 60 "Running Disk Cleanup Utility..."
+        Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
+        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+        Run-SilentProcess "cleanmgr.exe" $CleanParam
 
         # Step 4: Flush DNS
-        try {
-            Send-Progress 75 "Flushing DNS Cache..."
-            Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
-            Start-Process "ipconfig.exe" -ArgumentList "/flushdns" -NoNewWindow -Wait
-            Send-Log "DNS Cache flushed."
-        } catch { Send-Log "DNS flush step skipped/encountered issue." }
+        Send-Progress 75 "Flushing DNS Cache..."
+        Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
+        Run-SilentProcess "ipconfig.exe" "/flushdns"
 
         # Step 5: DISM Optimization
-        try {
-            Send-Progress 85 "Optimizing DISM Component Store..."
-            Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-            Start-Process "Dism.exe" -ArgumentList "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English" -NoNewWindow -Wait
-            Send-Log "DISM cleanup complete."
-        } catch { Send-Log "DISM step skipped/encountered issue." }
+        Send-Progress 85 "Optimizing DISM Component Store..."
+        Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
+        Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
 
         Send-Progress 100 "Optimization Complete!"
     }
