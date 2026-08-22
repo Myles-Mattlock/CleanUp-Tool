@@ -294,8 +294,7 @@ $BrushInactiveHover = [System.Windows.Media.BrushConverter]::new().ConvertFromSt
 $BrushActiveFG      = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
 $BrushInactiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
 
-$Global:CurrentProfileName = "Default"
-$Global:IsUpdatingProfile  = $false
+$Global:IsUpdatingProfile = $false
 
 function Save-LogAndMaintainHistory {
     try {
@@ -325,8 +324,6 @@ function Save-LogAndMaintainHistory {
 }
 
 function Set-ActiveProfileButton ($Profile) {
-    $Global:CurrentProfileName = $Profile
-
     $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
     $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
 
@@ -352,20 +349,14 @@ function Evaluate-CurrentProfile {
     }
 }
 
-# Attach Profile Hover Effects (MouseEnter / MouseLeave)
-$ProfileButtons = @(
-    @{ Control = $BtnProfileDefault; Name = "Default" },
-    @{ Control = $BtnProfileServer;  Name = "Server"  },
-    @{ Control = $BtnProfileCustom;  Name = "Custom"  }
-)
+# Dynamic Profile Hover Effects (State-Aware)
+$ProfileButtons = @($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom)
 
-foreach ($Item in $ProfileButtons) {
-    $Btn  = $Item.Control
-    $Name = $Item.Name
-
+foreach ($Btn in $ProfileButtons) {
     $Btn.Add_MouseEnter({
         if (-not $BtnStart.IsEnabled) { return }
-        if ($Global:CurrentProfileName -eq $Name) {
+        # Lighten active blue if currently active, or lighten dark grey if inactive
+        if ($this.Background.ToString() -eq $BrushActiveBG.ToString()) {
             $this.Background = $BrushActiveHover
         } else {
             $this.Background = $BrushInactiveHover
@@ -375,13 +366,8 @@ foreach ($Item in $ProfileButtons) {
 
     $Btn.Add_MouseLeave({
         if (-not $BtnStart.IsEnabled) { return }
-        if ($Global:CurrentProfileName -eq $Name) {
-            $this.Background = $BrushActiveBG
-            $this.Foreground = $BrushActiveFG
-        } else {
-            $this.Background = $BrushInactiveBG
-            $this.Foreground = $BrushInactiveFG
-        }
+        # Re-evaluate current active state to accurately restore colors on leave
+        Evaluate-CurrentProfile
     })
 }
 
