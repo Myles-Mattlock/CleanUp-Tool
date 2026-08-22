@@ -29,16 +29,17 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="720" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="760" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="25">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/> <!-- 0: Header -->
+            <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar (3 Cards) -->
+            <RowDefinition Height="*"/>    <!-- 2: Output Log Terminal -->
+            <RowDefinition Height="Auto"/> <!-- 3: Reclaimed Storage Box -->
+            <RowDefinition Height="Auto"/> <!-- 4: Progress Bar -->
+            <RowDefinition Height="Auto"/> <!-- 5: Action Controls -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -66,11 +67,9 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Stats & Health Bar -->
+        <!-- Top Stats Bar (3 Columns) -->
         <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
@@ -86,16 +85,8 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 </StackPanel>
             </Border>
 
-            <!-- Reclaimed Storage -->
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-
             <!-- Drive Wear / Health -->
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
                     <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
@@ -103,7 +94,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Border>
 
             <!-- Drive Temperature -->
-            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
                     <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
@@ -119,11 +110,26 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </ScrollViewer>
         </Border>
 
+        <!-- Reclaimed Storage Box (Moved Underneath Console) -->
+        <Border Grid.Row="3" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="TOTAL STORAGE RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock Text="Space freed during the current optimization session" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="TxtReclaimed" Grid.Column="1" Text="0 MB" FontSize="22" FontWeight="Bold" Foreground="#00FF66" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
         <!-- Progress Bar -->
-        <ProgressBar x:Name="CleanProgress" Grid.Row="3" Height="10" Margin="0,20,0,20" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+        <ProgressBar x:Name="CleanProgress" Grid.Row="4" Height="10" Margin="0,15,0,15" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
 
         <!-- Action Controls -->
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
