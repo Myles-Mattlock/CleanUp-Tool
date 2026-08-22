@@ -332,14 +332,14 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
 # Init Setup
 $Window.Add_Loaded({
-    # --- Set Title bar Color via DWM API ---
+    # --- Set Dark Blue Title bar Color via DWM API ---
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         # DWMWA_CAPTION_COLOR = 35
         $CaptionAttr = 35
-        # COLORREF format in hex (BGR): 0x00FFE500 represents Cyan (#00E5FF)
-        $CyanColor = 0x00FFE500 
-        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$CyanColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
+        # COLORREF format in hex (BGR): 0x00CC7A00 represents Dark Blue (#007ACC)
+        $DarkBlueColor = 0x00CC7A00 
+        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$DarkBlueColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
 
     # --- Load Header Left Logo Image ---
