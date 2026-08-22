@@ -11,7 +11,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "2.0.1" 
+$Global:CurrentVersion = "1.0.0" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
