@@ -370,23 +370,25 @@ $BtnStart.Add_Click({
         $FinishedQueue.Enqueue($true)
     }
 
-    $Runspace = [runspacefactory]::CreateRunspace()
-    $Runspace.Open()
-    $PowerShell = [powershell]::Create()
-    $PowerShell.Runspace = $Runspace
-    [void]$PowerShell.AddScript($ScriptBlock)
-    [void]$PowerShell.AddArgument($CurrentDir)
-    [void]$PowerShell.AddArgument($Global:RegFiles)
-    [void]$PowerShell.AddArgument($Global:LogQueue)
-    [void]$PowerShell.AddArgument($Global:ProgressQueue)
-    [void]$PowerShell.AddArgument($Global:FinishedQueue)
+    $Global:Runspace = [runspacefactory]::CreateRunspace()
+    $Global:Runspace.Open()
+    $Global:PowerShell = [powershell]::Create()
+    $Global:PowerShell.Runspace = $Global:Runspace
+    [void]$Global:PowerShell.AddScript($ScriptBlock)
+    [void]$Global:PowerShell.AddArgument($CurrentDir)
+    [void]$Global:PowerShell.AddArgument($Global:RegFiles)
+    [void]$Global:PowerShell.AddArgument($Global:LogQueue)
+    [void]$Global:PowerShell.AddArgument($Global:ProgressQueue)
+    [void]$Global:PowerShell.AddArgument($Global:FinishedQueue)
     
-    $AsyncResult = $PowerShell.BeginInvoke()
+    $Global:AsyncResult = $Global:PowerShell.BeginInvoke()
 
     $Timer = New-Object System.Windows.Threading.DispatcherTimer
     $Timer.Interval = [TimeSpan]::FromMilliseconds(100)
 
     $Timer.Add_Tick({
+        param($sender, $e)
+
         $msg = ""
         while ($Global:LogQueue.TryDequeue([ref]$msg)) {
             Write-GuiLog $msg
@@ -400,11 +402,12 @@ $BtnStart.Add_Click({
         }
 
         $isDone = $false
-        if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or $AsyncResult.IsCompleted) {
-            $Timer.Stop()
-            try { $PowerShell.EndInvoke($AsyncResult) } catch {}
-            $PowerShell.Dispose()
-            $Runspace.Dispose()
+        if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or ($Global:AsyncResult -and $Global:AsyncResult.IsCompleted)) {
+            $sender.Stop()
+            
+            try { if ($Global:PowerShell) { $Global:PowerShell.EndInvoke($Global:AsyncResult) } } catch {}
+            try { if ($Global:PowerShell) { $Global:PowerShell.Dispose() } } catch {}
+            try { if ($Global:Runspace) { $Global:Runspace.Dispose() } } catch {}
 
             $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
             $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
