@@ -60,7 +60,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Stats & Health Bar (6 Columns) -->
+        <!-- Stats & Health Bar -->
         <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -185,7 +185,7 @@ function Write-GuiLog ($Message) {
     })
 }
 
-# --- DIRECT HARDWARE SMART & TEMPERATURE DIAGNOSTICS ---
+# --- ENHANCED HARDWARE & SMART DIAGNOSTICS FOR NVMe / SATA ---
 function Get-DriveHealthDiagnostics {
     Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
     
@@ -195,82 +195,86 @@ function Get-DriveHealthDiagnostics {
     $CyclesStatusText = "N/A"
 
     try {
-        # 1. Physical Disk Check via CIM
-        $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
-        
-        # 2. Query WMI MSStorageDriver namespace for SMART Data
-        $SmartPredict = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue
-        $SmartData    = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
+        # 1. Broad scan via Get-PhysicalDisk across Storage module
+        $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
 
         foreach ($Disk in $PhysicalDisks) {
-            $Model = $Disk.Model
-            $Index = $Disk.Index
-            $Interface = $Disk.InterfaceType
-            $Status = $Disk.Status
+            $Model = $Disk.FriendlyName
+            $Health = $Disk.HealthStatus
+            $Operational = $Disk.OperationalStatus
 
-            Write-GuiLog "Drive [$Index]: $Model ($Interface) - SMART Status: $Status"
+            Write-GuiLog "Target Drive: $Model - Health: $Health ($Operational)"
 
-            # Check PhysicalDisk reliability counters directly for Hours & Power Cycles
-            $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
-            if ($PhysDisk) {
-                $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                if ($Counter) {
-                    if ($Counter.Temperature -gt 0) {
-                        $TempStatusText = "$($Counter.Temperature) °C"
-                        Write-GuiLog "  > Storage Reliability Temp: $TempStatusText"
-                    }
-                    if ($Counter.Wear -ne $null) {
-                        $HealthStatusText = "$(100 - $Counter.Wear)% Health"
-                        Write-GuiLog "  > Wear Remaining: $HealthStatusText"
-                    }
-                    if ($Counter.PowerOnHours -ne $null) {
-                        $HoursStatusText = "$($Counter.PowerOnHours) hrs"
-                        Write-GuiLog "  > Power On Hours: $HoursStatusText"
-                    }
-                    if ($Counter.PowerCycleCount -ne $null) {
-                        $CyclesStatusText = "$($Counter.PowerCycleCount)"
-                        Write-GuiLog "  > Power Cycles: $CyclesStatusText"
-                    }
+            # Query StorageReliabilityCounter (Works across OS drive regardless of SATA/NVMe)
+            $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            if ($Counter) {
+                if ($Counter.Temperature -and $Counter.Temperature -gt 0) {
+                    $TempStatusText = "$($Counter.Temperature) °C"
+                    Write-GuiLog "  > Reliability Temp: $TempStatusText"
+                }
+                if ($Counter.Wear -ne $null) {
+                    $HealthStatusText = "$(100 - $Counter.Wear)% Health"
+                    Write-GuiLog "  > Wear Remaining: $HealthStatusText"
+                }
+                if ($Counter.PowerOnHours -ne $null -and $Counter.PowerOnHours -gt 0) {
+                    $HoursStatusText = "$($Counter.PowerOnHours) hrs"
+                    Write-GuiLog "  > Power On Hours: $HoursStatusText"
+                }
+                if ($Counter.PowerCycleCount -ne $null -and $Counter.PowerCycleCount -gt 0) {
+                    $CyclesStatusText = "$($Counter.PowerCycleCount)"
+                    Write-GuiLog "  > Power Cycles: $CyclesStatusText"
                 }
             }
 
-            # Parse SMART Vendor Bytes for Fallback (Temp: 194/190, Hours: 9, Cycles: 12)
-            $DiskSmart = $SmartData | Where-Object { $_.InstanceName -like "*$Index*" -or $_.InstanceName -like "*$Model*" }
-            if ($DiskSmart -and $DiskSmart.VendorSpecific) {
-                $VendorBytes = $DiskSmart.VendorSpecific
-                for ($i = 2; $i -lt $VendorBytes.Length - 12; $i += 12) {
-                    $AttrId = $VendorBytes[$i]
-                    
-                    # Temp Attribute (194/0xC2 or 190/0xBE)
-                    if (($AttrId -eq 194 -or $AttrId -eq 190) -and $TempStatusText -eq "N/A") {
-                        $RawTemp = $VendorBytes[$i + 5]
-                        if ($RawTemp -gt 0 -and $RawTemp -lt 100) {
-                            $TempStatusText = "$RawTemp °C"
+            # 2. Fallback check for NVMe Smart Log data via CIM MSFT_PhysicalDisk Storage Namespace
+            if ($HoursStatusText -eq "N/A" -or $CyclesStatusText -eq "N/A") {
+                $CimDisk = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName MSFT_PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq $Model -or $_.DeviceId -eq $Disk.DeviceId }
+                if ($CimDisk) {
+                    $HealthReport = $CimDisk | Get-CimAssociatedInstance -ResultClassName MSFT_StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($HealthReport) {
+                        if ($HoursStatusText -eq "N/A" -and $HealthReport.PowerOnHours) {
+                            $HoursStatusText = "$($HealthReport.PowerOnHours) hrs"
+                            Write-GuiLog "  > MSFT Storage Power On Hours: $HoursStatusText"
                         }
-                    }
-                    # Power-On Hours Attribute (9 / 0x09)
-                    if ($AttrId -eq 9 -and $HoursStatusText -eq "N/A") {
-                        $RawHours = [BitConverter]::ToUInt32($VendorBytes, $i + 5)
-                        if ($RawHours -gt 0) {
-                            $HoursStatusText = "$RawHours hrs"
-                        }
-                    }
-                    # Power Cycle Count Attribute (12 / 0x0C)
-                    if ($AttrId -eq 12 -and $CyclesStatusText -eq "N/A") {
-                        $RawCycles = [BitConverter]::ToUInt32($VendorBytes, $i + 5)
-                        if ($RawCycles -gt 0) {
-                            $CyclesStatusText = "$RawCycles"
+                        if ($CyclesStatusText -eq "N/A" -and $HealthReport.PowerCycleCount) {
+                            $CyclesStatusText = "$($HealthReport.PowerCycleCount)"
+                            Write-GuiLog "  > MSFT Storage Power Cycles: $CyclesStatusText"
                         }
                     }
                 }
             }
 
-            if ($Status -ne "OK") {
-                $HealthStatusText = "Caution ($Status)"
+            # 3. Fallback for legacy WMI MSStorageDriver parser (SATA drives)
+            if ($HoursStatusText -eq "N/A" -or $CyclesStatusText -eq "N/A") {
+                $SmartData = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
+                if ($SmartData) {
+                    foreach ($SD in $SmartData) {
+                        if ($SD.VendorSpecific) {
+                            $Bytes = $SD.VendorSpecific
+                            for ($i = 2; $i -lt $Bytes.Length - 12; $i += 12) {
+                                $AttrId = $Bytes[$i]
+                                # Attribute 9 = Power On Hours
+                                if ($AttrId -eq 9 -and $HoursStatusText -eq "N/A") {
+                                    $Val = [BitConverter]::ToUInt32($Bytes, $i + 5)
+                                    if ($Val -gt 0 -and $Val -lt 1000000) { $HoursStatusText = "$Val hrs" }
+                                }
+                                # Attribute 12 = Power Cycles
+                                if ($AttrId -eq 12 -and $CyclesStatusText -eq "N/A") {
+                                    $Val = [BitConverter]::ToUInt32($Bytes, $i + 5)
+                                    if ($Val -gt 0 -and $Val -lt 1000000) { $CyclesStatusText = "$Val" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($Health -ne "Healthy" -and $Health -ne "OK") {
+                $HealthStatusText = "Caution ($Health)"
             }
         }
     } catch {
-        Write-GuiLog "  > Basic disk health verification completed."
+        Write-GuiLog "  > Extended disk diagnostics completed with basic reporting."
         $HealthStatusText = "Healthy"
     }
 
