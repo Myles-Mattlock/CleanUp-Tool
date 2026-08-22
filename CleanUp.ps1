@@ -36,7 +36,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- 0: Header -->
             <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar -->
-            <RowDefinition Height="Auto"/> <!-- 2: Task Checkboxes -->
+            <RowDefinition Height="Auto"/> <!-- 2: Task Checkboxes & Profiles -->
             <RowDefinition Height="*"/>    <!-- 3: Output Log Terminal -->
             <RowDefinition Height="Auto"/> <!-- 4: Reclaimed Storage Box -->
             <RowDefinition Height="Auto"/> <!-- 5: Progress Bar -->
@@ -98,10 +98,25 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Border>
         </Grid>
 
-        <!-- Task Selection Checkboxes -->
+        <!-- Task Selection Checkboxes & Profile Selector -->
         <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
             <StackPanel>
-                <TextBlock Text="SELECT TASKS TO RUN" FontSize="11" FontWeight="Bold" Foreground="#888888" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="SELECT TASKS TO RUN" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="PROFILE:" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="CmbProfile" Width="160" Height="26" Background="#2D2D30" Foreground="#00E5FF" 
+                                  FontSize="12" FontWeight="Bold" VerticalContentAlignment="Center" Cursor="Hand">
+                            <ComboBoxItem Content="Default" IsSelected="True"/>
+                            <ComboBoxItem Content="Server Cleanup"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+
                 <WrapPanel>
                     <CheckBox x:Name="ChkTempFiles" Content="Clear Temp Files &amp; System Logs" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
                     <CheckBox x:Name="ChkRecycleBin" Content="Empty Recycle Bin" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
@@ -180,6 +195,7 @@ $CleanProgress      = $Window.FindName("CleanProgress")
 $TxtProgressPercent = $Window.FindName("TxtProgressPercent")
 $TxtStatus          = $Window.FindName("TxtStatus")
 $BtnStart           = $Window.FindName("BtnStart")
+$CmbProfile         = $Window.FindName("CmbProfile")
 
 # Map Task Checkboxes
 $ChkTempFiles       = $Window.FindName("ChkTempFiles")
@@ -187,6 +203,24 @@ $ChkRecycleBin      = $Window.FindName("ChkRecycleBin")
 $ChkCleanmgr        = $Window.FindName("ChkCleanmgr")
 $ChkFlushDNS        = $Window.FindName("ChkFlushDNS")
 $ChkDism            = $Window.FindName("ChkDism")
+
+# Profile Switch Logic
+$CmbProfile.Add_SelectionChanged({
+    $SelectedProfile = $CmbProfile.SelectedItem.Content
+    if ($SelectedProfile -eq "Server Cleanup") {
+        $ChkTempFiles.IsChecked  = $true
+        $ChkRecycleBin.IsChecked = $true
+        $ChkCleanmgr.IsChecked   = $true
+        $ChkFlushDNS.IsChecked   = $false
+        $ChkDism.IsChecked       = $false
+    } elseif ($SelectedProfile -eq "Default") {
+        $ChkTempFiles.IsChecked  = $true
+        $ChkRecycleBin.IsChecked = $true
+        $ChkCleanmgr.IsChecked   = $true
+        $ChkFlushDNS.IsChecked   = $true
+        $ChkDism.IsChecked       = $true
+    }
+})
 
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
@@ -314,7 +348,8 @@ $BtnStart.Add_Click({
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
     
-    # Disable checkboxes during cleanup
+    # Disable controls during cleanup
+    $CmbProfile.IsEnabled    = $false
     $ChkTempFiles.IsEnabled  = $false
     $ChkRecycleBin.IsEnabled = $false
     $ChkCleanmgr.IsEnabled   = $false
@@ -487,6 +522,7 @@ $BtnStart.Add_Click({
             $BtnStart.Content = "Finished"
             $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
 
+            $CmbProfile.IsEnabled    = $true
             $ChkTempFiles.IsEnabled  = $true
             $ChkRecycleBin.IsEnabled = $true
             $ChkCleanmgr.IsEnabled   = $true
