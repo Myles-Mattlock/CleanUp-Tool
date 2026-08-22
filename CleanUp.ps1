@@ -23,7 +23,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="520" Width="720" 
+        Title="Myles Mattlock CleanUp Tool" Height="580" Width="720" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="20">
@@ -56,25 +56,47 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Stats Bar -->
+        <!-- Stats & Health Bar -->
         <Grid Grid.Row="1" Margin="0,0,0,15">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="10"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="12">
+            <!-- Initial Free Space -->
+            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="INITIAL FREE SPACE" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,4,0,0"/>
+                    <TextBlock Text="INITIAL FREE" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="16" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
 
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="12">
+            <!-- Reclaimed Storage -->
+            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="RECLAIMED STORAGE" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,4,0,0"/>
+                    <TextBlock Text="RECLAIMED" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="16" FontWeight="Bold" Foreground="#00FF66" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Drive Wear / Health -->
+            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="DRIVE HEALTH" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="16" FontWeight="Bold" Foreground="#00E5FF" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Drive Temperature -->
+            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="TEMP" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="16" FontWeight="Bold" Foreground="#FFCC00" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -119,6 +141,8 @@ $ImgLogo         = $Window.FindName("ImgLogo")
 $TxtVersion      = $Window.FindName("TxtVersion")
 $TxtInitialSpace = $Window.FindName("TxtInitialSpace")
 $TxtReclaimed    = $Window.FindName("TxtReclaimed")
+$TxtDriveHealth  = $Window.FindName("TxtDriveHealth")
+$TxtDriveTemp    = $Window.FindName("TxtDriveTemp")
 $TxtLog          = $Window.FindName("TxtLog")
 $LogScroll       = $Window.FindName("LogScroll")
 $CleanProgress   = $Window.FindName("CleanProgress")
@@ -134,6 +158,49 @@ function Write-GuiLog ($Message) {
     })
 }
 
+# --- DRIVE HEALTH DIAGNOSTICS ---
+function Get-DriveHealthDiagnostics {
+    Write-GuiLog "=== DISK HEALTH DIAGNOSTICS ==="
+    try {
+        $Disks = Get-PhysicalDisk | ErrorAction SilentlyContinue
+        foreach ($Disk in $Disks) {
+            $Counters = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            
+            $DeviceId = $Disk.DeviceId
+            $FriendlyName = $Disk.FriendlyName
+            $MediaType = $Disk.MediaType
+            $Wear = if ($Counters.Wear -ne $null) { "$($Counters.Wear)%" } else { "N/A" }
+            $Temp = if ($Counters.Temperature -ne $null -and $Counters.Temperature -gt 0) { "$($Counters.Temperature)°C" } else { "N/A" }
+            $ReadErrors = if ($Counters.ReadErrorsUncorrected -ne $null) { $Counters.ReadErrorsUncorrected } else { 0 }
+            $WriteErrors = if ($Counters.WriteErrorsUncorrected -ne $null) { $Counters.WriteErrorsUncorrected } else { 0 }
+
+            Write-GuiLog "Drive ID [$DeviceId]: $FriendlyName ($MediaType)"
+            Write-GuiLog "  > Wear Level: $Wear | Temp: $Temp"
+            Write-GuiLog "  > Uncorrected Errors - Read: $ReadErrors | Write: $WriteErrors"
+
+            # Update Header Card for OS Drive (Device 0 or OS drive target)
+            if ($DeviceId -eq 0 -or $Disks.Count -eq 1) {
+                if ($Counters.Wear -ne $null) {
+                    $HealthPercentage = 100 - $Counters.Wear
+                    $TxtDriveHealth.Text = "$HealthPercentage% Health"
+                } else {
+                    $TxtDriveHealth.Text = "OK"
+                }
+
+                if ($Counters.Temperature -ne $null -and $Counters.Temperature -gt 0) {
+                    $TxtDriveTemp.Text = "$($Counters.Temperature) °C"
+                } else {
+                    $TxtDriveTemp.Text = "N/A"
+                }
+            }
+        }
+    } catch {
+        Write-GuiLog "Note: Unable to retrieve extended storage reliability metrics."
+        $TxtDriveHealth.Text = "N/A"
+        $TxtDriveTemp.Text = "N/A"
+    }
+}
+
 # --- UPDATE CHECKER (STABLE ONLY) ---
 function Check-ForUpdates {
     Write-GuiLog "Checking for updates..."
@@ -142,7 +209,6 @@ function Check-ForUpdates {
         $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
         $Url = "https://api.github.com/repos/$Global:RepoName/releases"
 
-        # Fetch releases and filter out anything marked as a Prerelease (Beta)
         $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
         $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
 
@@ -197,7 +263,6 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $pinfo
 
-    # Attach event handlers to stream output in real time
     $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
         if ($Event.SourceEventArgs.Data) {
             Write-GuiLog $Event.SourceEventArgs.Data
@@ -213,7 +278,6 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()
 
-    # Process events while waiting for completion to ensure UI stays responsive
     while (-not $process.HasExited) {
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 100
@@ -221,7 +285,6 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
     $process.WaitForExit()
     
-    # Cleanup event subscribers
     Unregister-Event -SourceIdentifier $outEvent.Name
     Unregister-Event -SourceIdentifier $errEvent.Name
 }
@@ -250,6 +313,9 @@ $Window.Add_Loaded({
     
     Write-GuiLog "System Cleanup Tool Initialized."
     
+    # Query Drive Health & Reliablity Counters
+    Get-DriveHealthDiagnostics
+
     # Run the GitHub update check on startup
     Check-ForUpdates
 })
