@@ -472,6 +472,7 @@ $BtnStart.Add_Click({
 
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
+    $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#d7e41c")
     $CleanProgress.Value = 0
     $TxtProgressPercent.Text = "0%"
     
