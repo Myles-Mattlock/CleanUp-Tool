@@ -8,6 +8,30 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Exit
 }
 
+# --- TERMINAL ASCII LOGO BANNER ---
+Clear-Host
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$Teal = "DarkCyan"
+
+Write-Host "                ,▄▄██████████▄▄,                " -ForegroundColor $Teal
+Write-Host "             ▄████▀▀▀        ▀▀████▄            " -ForegroundColor $Teal
+Write-Host "           ████▀                ▀███▄         " -ForegroundColor $Teal
+Write-Host "         ▄███▀          ▓▓        ▀███▄       " -ForegroundColor $Teal
+Write-Host "        ███▀           ▓▓            ▀███     " -ForegroundColor $Teal
+Write-Host "       ███            ▓▓               ███     " -ForegroundColor $Teal
+Write-Host "      ███            ▓▓                 ███    " -ForegroundColor $Teal
+Write-Host "      ███          ▄███▄          ░░     ███    " -ForegroundColor $Teal
+Write-Host "      ███   •     ███████        ░░░     ███    " -ForegroundColor $Teal
+Write-Host "      ███  •●    █████████     ══        ███    " -ForegroundColor $Teal
+Write-Host "      ███ ▄▄█▄  ███████████   ═══        ███    " -ForegroundColor $Teal
+Write-Host "       ███ ▀▀  █████████████            ███     " -ForegroundColor $Teal
+Write-Host "        ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███      " -ForegroundColor $Teal
+Write-Host "         ▀███▄ ════════════════════ ▄███▀       " -ForegroundColor $Teal
+Write-Host "           ▀████▄                ▄████▀         " -ForegroundColor $Teal
+Write-Host "             ▀██████████████████████▀           " -ForegroundColor $Teal
+Write-Host "                ▀▀▀████████████▀▀▀              " -ForegroundColor $Teal
+Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor Gray
+
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- NATIVE WINDOW DWM COLORING (WIN 11 TITLEBAR ACCENT) ---
