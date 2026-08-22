@@ -110,13 +110,19 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="PROFILES:" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <Button x:Name="BtnProfileDefault" Content="Default" Width="90" Height="26" 
-                                Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,8,0" Cursor="Hand">
+                        <Button x:Name="BtnProfileDefault" Content="Default" Width="80" Height="26" 
+                                Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
                             <Button.Resources>
                                 <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
                             </Button.Resources>
                         </Button>
-                        <Button x:Name="BtnProfileServer" Content="Server Cleanup" Width="110" Height="26" 
+                        <Button x:Name="BtnProfileServer" Content="Server Cleanup" Width="105" Height="26" 
+                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
+                            <Button.Resources>
+                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
+                            </Button.Resources>
+                        </Button>
+                        <Button x:Name="BtnProfileCustom" Content="Custom" Width="80" Height="26" 
                                 Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
                             <Button.Resources>
                                 <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
@@ -207,6 +213,7 @@ $BtnStart           = $Window.FindName("BtnStart")
 # Map Profile Buttons
 $BtnProfileDefault  = $Window.FindName("BtnProfileDefault")
 $BtnProfileServer   = $Window.FindName("BtnProfileServer")
+$BtnProfileCustom   = $Window.FindName("BtnProfileCustom")
 
 # Map Task Checkboxes
 $ChkTempFiles       = $Window.FindName("ChkTempFiles")
@@ -215,40 +222,74 @@ $ChkCleanmgr        = $Window.FindName("ChkCleanmgr")
 $ChkFlushDNS        = $Window.FindName("ChkFlushDNS")
 $ChkDism            = $Window.FindName("ChkDism")
 
-# Profile Button Click Logic
+# Brushes for Profile Highlighting
 $BrushActiveBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
 $BrushInactiveBG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
 $BrushActiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
 $BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
 
+# Flag to prevent event loop triggers when setting profiles programmatically
+$Global:IsUpdatingProfile = $false
+
+function Set-ActiveProfileButton ($Profile) {
+    $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
+
+    $BtnProfileServer.Background  = if ($Profile -eq "Server")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileServer.Foreground  = if ($Profile -eq "Server")  { $BrushActiveFG } else { $BrushInactiveFG }
+
+    $BtnProfileCustom.Background  = if ($Profile -eq "Custom")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileCustom.Foreground  = if ($Profile -eq "Custom")  { $BrushActiveFG } else { $BrushInactiveFG }
+}
+
+function Evaluate-CurrentProfile {
+    if ($Global:IsUpdatingProfile) { return }
+
+    # Check if exact match for Default
+    if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) {
+        Set-ActiveProfileButton "Default"
+    }
+    # Check if exact match for Server
+    elseif ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and (-not $ChkFlushDNS.IsChecked) -and (-not $ChkDism.IsChecked)) {
+        Set-ActiveProfileButton "Server"
+    }
+    else {
+        Set-ActiveProfileButton "Custom"
+    }
+}
+
+# Attach Checkbox Change Event Handlers
+$AllCheckboxes = @($ChkTempFiles, $ChkRecycleBin, $ChkCleanmgr, $ChkFlushDNS, $ChkDism)
+foreach ($Chk in $AllCheckboxes) {
+    $Chk.Add_Checked({ Evaluate-CurrentProfile })
+    $Chk.Add_Unchecked({ Evaluate-CurrentProfile })
+}
+
+# Profile Button Click Handlers
 $BtnProfileDefault.Add_Click({
-    # Set Checkboxes
+    $Global:IsUpdatingProfile = $true
     $ChkTempFiles.IsChecked  = $true
     $ChkRecycleBin.IsChecked = $true
     $ChkCleanmgr.IsChecked   = $true
     $ChkFlushDNS.IsChecked   = $true
     $ChkDism.IsChecked       = $true
-
-    # Update Button Highlights
-    $BtnProfileDefault.Background = $BrushActiveBG
-    $BtnProfileDefault.Foreground = $BrushActiveFG
-    $BtnProfileServer.Background  = $BrushInactiveBG
-    $BtnProfileServer.Foreground  = $BrushInactiveFG
+    Set-ActiveProfileButton "Default"
+    $Global:IsUpdatingProfile = $false
 })
 
 $BtnProfileServer.Add_Click({
-    # Set Checkboxes
+    $Global:IsUpdatingProfile = $true
     $ChkTempFiles.IsChecked  = $true
     $ChkRecycleBin.IsChecked = $true
     $ChkCleanmgr.IsChecked   = $true
     $ChkFlushDNS.IsChecked   = $false
     $ChkDism.IsChecked       = $false
+    Set-ActiveProfileButton "Server"
+    $Global:IsUpdatingProfile = $false
+})
 
-    # Update Button Highlights
-    $BtnProfileServer.Background  = $BrushActiveBG
-    $BtnProfileServer.Foreground  = $BrushActiveFG
-    $BtnProfileDefault.Background = $BrushInactiveBG
-    $BtnProfileDefault.Foreground = $BrushInactiveFG
+$BtnProfileCustom.Add_Click({
+    Set-ActiveProfileButton "Custom"
 })
 
 function Write-GuiLog ($Message) {
@@ -380,6 +421,7 @@ $BtnStart.Add_Click({
     # Disable controls during cleanup
     $BtnProfileDefault.IsEnabled = $false
     $BtnProfileServer.IsEnabled  = $false
+    $BtnProfileCustom.IsEnabled  = $false
     $ChkTempFiles.IsEnabled      = $false
     $ChkRecycleBin.IsEnabled     = $false
     $ChkCleanmgr.IsEnabled       = $false
@@ -554,6 +596,7 @@ $BtnStart.Add_Click({
 
             $BtnProfileDefault.IsEnabled = $true
             $BtnProfileServer.IsEnabled  = $true
+            $BtnProfileCustom.IsEnabled  = $true
             $ChkTempFiles.IsEnabled      = $true
             $ChkRecycleBin.IsEnabled     = $true
             $ChkCleanmgr.IsEnabled       = $true
