@@ -29,17 +29,16 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="760" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="720" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="25">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- 0: Header -->
-            <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar (3 Cards) -->
-            <RowDefinition Height="*"/>    <!-- 2: Output Log Terminal -->
-            <RowDefinition Height="Auto"/> <!-- 3: Reclaimed Storage Box -->
-            <RowDefinition Height="Auto"/> <!-- 4: Progress Bar -->
-            <RowDefinition Height="Auto"/> <!-- 5: Action Controls -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -56,7 +55,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,20,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
+                    <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#00E5FF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
                 
@@ -67,9 +66,11 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Top Stats Bar (3 Columns) -->
+        <!-- Stats & Health Bar -->
         <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="15"/>
                 <ColumnDefinition Width="*"/>
@@ -85,8 +86,16 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 </StackPanel>
             </Border>
 
-            <!-- Drive Wear / Health -->
+            <!-- Reclaimed Storage -->
             <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Drive Wear / Health -->
+            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
                     <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
@@ -94,7 +103,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Border>
 
             <!-- Drive Temperature -->
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
                     <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
@@ -110,26 +119,11 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </ScrollViewer>
         </Border>
 
-        <!-- Reclaimed Storage Box -->
-        <Border Grid.Row="3" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="TOTAL STORAGE RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock Text="Space freed during the current optimization session" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
-                </StackPanel>
-                <TextBlock x:Name="TxtReclaimed" Grid.Column="1" Text="0 MB" FontSize="22" FontWeight="Bold" Foreground="#00FF66" VerticalAlignment="Center"/>
-            </Grid>
-        </Border>
-
         <!-- Progress Bar -->
-        <ProgressBar x:Name="CleanProgress" Grid.Row="4" Height="10" Margin="0,15,0,15" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+        <ProgressBar x:Name="CleanProgress" Grid.Row="3" Height="10" Margin="0,20,0,20" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
 
         <!-- Action Controls -->
-        <Grid Grid.Row="5">
+        <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -297,7 +291,7 @@ function Check-ForUpdates {
     }
 }
 
-# Universal Real-Time Output Process Runner (Handles both \n and \r DISM progress)
+# Real-Time Output Process Runner
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $FilePath
@@ -309,36 +303,31 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $pinfo
-    $process.Start() | Out-Null
 
-    $stdOut = $process.StandardOutput
-    $buffer = New-Object System.Text.StringBuilder
-
-    while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
-        while ($stdOut.Peek() -ge 0) {
-            $char = [char]$stdOut.Read()
-            if ($char -eq "`n" -or $char -eq "`r") {
-                $str = $buffer.ToString().Trim()
-                if (-not [string]::IsNullOrWhiteSpace($str)) {
-                    Write-GuiLog $str
-                }
-                $buffer.Clear() | Out-Null
-            } else {
-                $buffer.Append($char) | Out-Null
-            }
+    $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
+        if ($Event.SourceEventArgs.Data) {
+            Write-GuiLog $Event.SourceEventArgs.Data
         }
+    }
+    $errEvent = Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
+        if ($Event.SourceEventArgs.Data) {
+            Write-GuiLog "ERR: $($Event.SourceEventArgs.Data)"
+        }
+    }
+
+    $process.Start() | Out-Null
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+
+    while (-not $process.HasExited) {
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 100
     }
 
-    if ($buffer.Length -gt 0) {
-        $str = $buffer.ToString().Trim()
-        if (-not [string]::IsNullOrWhiteSpace($str)) {
-            Write-GuiLog $str
-        }
-    }
-
     $process.WaitForExit()
+    
+    Unregister-Event -SourceIdentifier $outEvent.Name
+    Unregister-Event -SourceIdentifier $errEvent.Name
 }
 
 # Init Setup
@@ -348,7 +337,7 @@ $Window.Add_Loaded({
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         # DWMWA_CAPTION_COLOR = 35
         $CaptionAttr = 35
-        # COLORREF format in hex (BGR): 0x00382D12 represents #122D38
+        # COLORREF format in hex (BGR): 0x00382D12 represents #122D38 (Very dark blue with a subtle green-teal tint)
         $DarkTealColor = 0x00382D12 
         [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
@@ -458,7 +447,7 @@ $BtnStart.Add_Click({
     $TxtStatus.Text = "Optimizing DISM Component Store..."
     $CleanProgress.Value = 85
     Write-GuiLog "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart"
 
     # Final Calculation
     $CleanProgress.Value = 100
