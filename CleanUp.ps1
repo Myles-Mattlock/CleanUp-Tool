@@ -297,7 +297,7 @@ function Check-ForUpdates {
     }
 }
 
-# Standard Non-Blocking Asynchronous Process Runner
+# Universal Real-Time Output Process Runner (Handles both \n and \r DISM progress)
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $FilePath
@@ -309,37 +309,36 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $pinfo
-
-    $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            $cleanData = $Event.SourceEventArgs.Data.Trim()
-            if (-not [string]::IsNullOrWhiteSpace($cleanData)) {
-                Write-GuiLog $cleanData
-            }
-        }
-    }
-    $errEvent = Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            $cleanData = $Event.SourceEventArgs.Data.Trim()
-            if (-not [string]::IsNullOrWhiteSpace($cleanData)) {
-                Write-GuiLog "ERR: $cleanData"
-            }
-        }
-    }
-
     $process.Start() | Out-Null
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
 
-    while (-not $process.HasExited) {
+    $stdOut = $process.StandardOutput
+    $buffer = New-Object System.Text.StringBuilder
+
+    while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
+        while ($stdOut.Peek() -ge 0) {
+            $char = [char]$stdOut.Read()
+            if ($char -eq "`n" -or $char -eq "`r") {
+                $str = $buffer.ToString().Trim()
+                if (-not [string]::IsNullOrWhiteSpace($str)) {
+                    Write-GuiLog $str
+                }
+                $buffer.Clear() | Out-Null
+            } else {
+                $buffer.Append($char) | Out-Null
+            }
+        }
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 50
+        Start-Sleep -Milliseconds 100
+    }
+
+    if ($buffer.Length -gt 0) {
+        $str = $buffer.ToString().Trim()
+        if (-not [string]::IsNullOrWhiteSpace($str)) {
+            Write-GuiLog $str
+        }
     }
 
     $process.WaitForExit()
-    
-    Unregister-Event -SourceIdentifier $outEvent.Name -ErrorAction SilentlyContinue
-    Unregister-Event -SourceIdentifier $errEvent.Name -ErrorAction SilentlyContinue
 }
 
 # Init Setup
@@ -455,12 +454,11 @@ $BtnStart.Add_Click({
     Write-GuiLog "=== [4/5] FLUSHING DNS CACHE ==="
     Run-ProcessWithLiveOutput "ipconfig.exe" "/flushdns"
 
-    # 5. DISM Optimization (Wrapped via PowerShell pipeline to split DISM \r into standard lines)
+    # 5. DISM Optimization
     $TxtStatus.Text = "Optimizing DISM Component Store..."
     $CleanProgress.Value = 85
     Write-GuiLog "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-    $DismCmd = "Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
-    Run-ProcessWithLiveOutput "powershell.exe" "-NoProfile -Command `"$DismCmd | ForEach-Object { `$_.Split([char]13) } | ForEach-Object { if (`$_ -match '\S') { Write-Output `$_ } }`""
+    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
 
     # Final Calculation
     $CleanProgress.Value = 100
