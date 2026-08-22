@@ -35,7 +35,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
     <Grid Margin="25">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- 0: Header -->
-            <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar (3 Cards) -->
+            <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar -->
             <RowDefinition Height="*"/>    <!-- 2: Output Log Terminal -->
             <RowDefinition Height="Auto"/> <!-- 3: Reclaimed Storage Box -->
             <RowDefinition Height="Auto"/> <!-- 4: Progress Bar -->
@@ -52,7 +52,6 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left Logo -->
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,20,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -62,12 +61,11 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 
                 <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
 
-                <!-- Right Logo -->
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
-        <!-- Top Stats Bar (3 Columns) -->
+        <!-- Top Stats Bar -->
         <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -77,7 +75,6 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Initial Free Space -->
             <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
@@ -85,7 +82,6 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 </StackPanel>
             </Border>
 
-            <!-- Drive Wear / Health -->
             <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
@@ -93,7 +89,6 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                 </StackPanel>
             </Border>
 
-            <!-- Drive Temperature -->
             <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
                 <StackPanel>
                     <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
@@ -166,7 +161,6 @@ $CleanProgress   = $Window.FindName("CleanProgress")
 $TxtStatus       = $Window.FindName("TxtStatus")
 $BtnStart        = $Window.FindName("BtnStart")
 
-# Thread-safe Function to Stream Text into GUI Log Terminal
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
     $TxtLog.Dispatcher.Invoke([Action]{
@@ -175,19 +169,21 @@ function Write-GuiLog ($Message) {
     })
 }
 
-# --- DIRECT HARDWARE SMART & TEMPERATURE DIAGNOSTICS ---
+function Update-ProgressUI ($ProgressVal, $StatusMsg) {
+    $CleanProgress.Dispatcher.Invoke([Action]{
+        $CleanProgress.Value = $ProgressVal
+        $TxtStatus.Text = $StatusMsg
+    })
+}
+
+# --- DIRECT HARDWARE SMART DIAGNOSTICS ---
 function Get-DriveHealthDiagnostics {
     Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
-    
     $HealthStatusText = "Healthy"
     $TempStatusText = "N/A"
 
     try {
-        # 1. Physical Disk Check via CIM
         $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
-        
-        # 2. Query WMI MSStorageDriver namespace for SMART Data & Temperature
-        $SmartPredict = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue
         $SmartData    = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
 
         foreach ($Disk in $PhysicalDisks) {
@@ -197,58 +193,28 @@ function Get-DriveHealthDiagnostics {
             $Status = $Disk.Status
 
             Write-GuiLog "Drive [$Index]: $Model ($Interface) - SMART Status: $Status"
-
-            # Parse SMART Vendor Bytes for Temperature (Attribute 0xC2 / 194 or 0xBE / 190)
-            $DiskSmart = $SmartData | Where-Object { $_.InstanceName -like "*$Index*" -or $_.InstanceName -like "*$Model*" }
             
-            if ($DiskSmart -and $DiskSmart.VendorSpecific) {
-                $VendorBytes = $DiskSmart.VendorSpecific
-                # Walk SMART attributes array (12 bytes per attribute)
-                for ($i = 2; $i -lt $VendorBytes.Length - 12; $i += 12) {
-                    $AttrId = $VendorBytes[$i]
-                    # Check for Temperature Attribute IDs (194/0xC2 or 190/0xBE)
-                    if ($AttrId -eq 194 -or $AttrId -eq 190) {
-                        $RawTemp = $VendorBytes[$i + 5]
-                        if ($RawTemp -gt 0 -and $RawTemp -lt 100) {
-                            $TempStatusText = "$RawTemp °C"
-                            Write-GuiLog "  > Raw SMART Temp Reading: $TempStatusText"
-                            break
-                        }
-                    }
-                }
-            }
-
-            # If WMI temperature parse didn't hit, check PhysicalDisk counters silently
             if ($TempStatusText -eq "N/A") {
                 $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
                 if ($PhysDisk) {
                     $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
                     if ($Counter -and $Counter.Temperature -gt 0) {
                         $TempStatusText = "$($Counter.Temperature) °C"
-                        Write-GuiLog "  > Storage Reliability Temp: $TempStatusText"
                     }
                     if ($Counter -and $Counter.Wear -ne $null) {
                         $HealthStatusText = "$(100 - $Counter.Wear)% Health"
-                        Write-GuiLog "  > Wear Remaining: $HealthStatusText"
                     }
                 }
             }
-
-            if ($Status -ne "OK") {
-                $HealthStatusText = "Caution ($Status)"
-            }
         }
     } catch {
-        Write-GuiLog "  > Basic disk health verification completed."
         $HealthStatusText = "Healthy"
     }
 
-    # Update UI Cards
     $TxtDriveHealth.Text = $HealthStatusText
     $TxtDriveTemp.Text = $TempStatusText
 }
 
-# --- UPDATE CHECKER (STABLE ONLY) ---
 function Check-ForUpdates {
     Write-GuiLog "Checking for updates..."
     try {
@@ -258,129 +224,46 @@ function Check-ForUpdates {
 
         $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
         $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
-
         $LocalVersion = [version]($Global:CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
-        $UpdateFound = $null
 
         foreach ($Rel in $StableReleases) {
             $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
-
             if ($RemoteVersion -gt $LocalVersion) {
-                $UpdateFound = $Rel
+                Write-GuiLog "[!] UPDATE AVAILABLE: $($Rel.tag_name)"
                 break 
             }
         }
-
-        if ($UpdateFound) {
-            Write-GuiLog "[!] NEW STABLE UPDATE AVAILABLE: $($UpdateFound.tag_name)"
-            Write-GuiLog "Currently running: v$Global:CurrentVersion"
-            Write-GuiLog "Download URL: $($UpdateFound.html_url)"
-            
-            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show(
-                "A new stable version ($($UpdateFound.tag_name)) is available.`n`nWould you like to open the download page now?", 
-                "Update Available", 
-                "YesNo", 
-                "Information"
-            )
-            
-            if ($UpdateChoice -eq "Yes") { 
-                Start-Process $UpdateFound.html_url
-                Write-GuiLog "Redirecting to download page. Closing application..."
-                Start-Sleep -Seconds 2
-                $Window.Close()
-            }
-        } else {
-            Write-GuiLog "You are running the latest stable version (v$Global:CurrentVersion)."
-        }
+        Write-GuiLog "Running stable version (v$Global:CurrentVersion)."
     } catch {
-        Write-GuiLog "Note: Update check skipped (Connection issue or release missing)."
+        Write-GuiLog "Note: Update check skipped."
     }
 }
 
-# Universal Real-Time Output Process Runner (Handles both \n and \r DISM progress)
-function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
-    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-    $pinfo.FileName = $FilePath
-    $pinfo.Arguments = $ArgumentList
-    $pinfo.UseShellExecute = $false
-    $pinfo.RedirectStandardOutput = $true
-    $pinfo.RedirectStandardError = $true
-    $pinfo.CreateNoWindow = $true
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $pinfo
-    $process.Start() | Out-Null
-
-    $stdOut = $process.StandardOutput
-    $buffer = New-Object System.Text.StringBuilder
-
-    while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
-        while ($stdOut.Peek() -ge 0) {
-            $char = [char]$stdOut.Read()
-            if ($char -eq "`n" -or $char -eq "`r") {
-                $str = $buffer.ToString().Trim()
-                if (-not [string]::IsNullOrWhiteSpace($str)) {
-                    Write-GuiLog $str
-                }
-                $buffer.Clear() | Out-Null
-            } else {
-                $buffer.Append($char) | Out-Null
-            }
-        }
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
-    }
-
-    if ($buffer.Length -gt 0) {
-        $str = $buffer.ToString().Trim()
-        if (-not [string]::IsNullOrWhiteSpace($str)) {
-            Write-GuiLog $str
-        }
-    }
-
-    $process.WaitForExit()
-}
-
-# Init Setup
 $Window.Add_Loaded({
-    # --- Set Very Dark Petrol Teal-Blue Title Bar Color via DWM API ---
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
-        # DWMWA_CAPTION_COLOR = 35
-        $CaptionAttr = 35
-        # COLORREF format in hex (BGR): 0x00382D12 represents #122D38
         $DarkTealColor = 0x00382D12 
-        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
+        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, 35, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
 
-    # --- Load Header Left Logo Image ---
     $LogoPath = Join-Path $CurrentDir "Logo.jpg"
     if (Test-Path $LogoPath) {
-        try {
-            $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
-            $bitmap.BeginInit()
-            $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
-            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-            $bitmap.EndInit()
-            $ImgLogo.Source = $bitmap
-        } catch {
-            Write-GuiLog "Warning: Could not load left logo image."
-        }
+        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
+        $bitmap.BeginInit()
+        $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
+        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmap.EndInit()
+        $ImgLogo.Source = $bitmap
     }
 
-    # --- Load Header Right Logo Image ---
     $LogoRightPath = Join-Path $CurrentDir "LogoRight.jpg"
     if (Test-Path $LogoRightPath) {
-        try {
-            $bitmapRight = New-Object System.Windows.Media.Imaging.BitmapImage
-            $bitmapRight.BeginInit()
-            $bitmapRight.UriSource = New-Object System.Uri($LogoRightPath, [System.UriKind]::Absolute)
-            $bitmapRight.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-            $bitmapRight.EndInit()
-            $ImgLogoRight.Source = $bitmapRight
-        } catch {
-            Write-GuiLog "Warning: Could not load right logo image."
-        }
+        $bitmapRight = New-Object System.Windows.Media.Imaging.BitmapImage
+        $bitmapRight.BeginInit()
+        $bitmapRight.UriSource = New-Object System.Uri($LogoRightPath, [System.UriKind]::Absolute)
+        $bitmapRight.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmapRight.EndInit()
+        $ImgLogoRight.Source = $bitmapRight
     }
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
@@ -389,95 +272,143 @@ $Window.Add_Loaded({
     $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
     
     Write-GuiLog "System Cleanup Initialized."
-    
-    # Query Drive Health & Reliablity Counters
     Get-DriveHealthDiagnostics
-
-    # Run the GitHub update check on startup
     Check-ForUpdates
 })
 
-# Cleanup Action
+# --- ASYNCHRONOUS BACKGROUND WORKER ---
 $BtnStart.Add_Click({
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
-    $CleanProgress.Value = 0
 
-    # 0. Registry Configs
-    $TxtStatus.Text = "Importing Registry configurations..."
-    $CleanProgress.Value = 10
-    Write-GuiLog "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
-    foreach ($File in $Global:RegFiles) {
-        $FilePath = Join-Path $CurrentDir $File
-        if (Test-Path $FilePath) {
-            Write-GuiLog "Applying registry file: $File"
-            Run-ProcessWithLiveOutput "reg.exe" "import `"$FilePath`""
+    # Launch cleanup in a background Job so UI thread NEVER freezes
+    $ScriptBlock = {
+        param($CurrentDir, $RegFiles)
+
+        function Send-Log ($msg) {
+            [PSCustomObject]@{ Type = "Log"; Message = $msg }
         }
-    }
-
-    # 1. Clear Temp Files
-    $TxtStatus.Text = "Clearing temporary files..."
-    $CleanProgress.Value = 25
-    Write-GuiLog "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
-    $TargetFolders = @(
-        "C:\Windows\Temp\*",
-        "C:\Windows\Prefetch\*",
-        "C:\Windows\SoftwareDistribution\Download\*",
-        "$([System.IO.Path]::GetTempPath())*",
-        "C:\Intel",
-        "C:\PerfLogs"
-    )
-    foreach ($Path in $TargetFolders) {
-        if (Test-Path $Path) {
-            Write-GuiLog "Deleting files in: $Path"
-            Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        function Send-Progress ($val, $status) {
+            [PSCustomObject]@{ Type = "Progress"; Value = $val; Status = $status }
         }
+
+        # Step 0: Registry
+        Send-Progress 10 "Importing Registry configurations..."
+        Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
+        foreach ($File in $RegFiles) {
+            $FilePath = Join-Path $CurrentDir $File
+            if (Test-Path $FilePath) {
+                Send-Log "Applying registry file: $File"
+                reg.exe import "$FilePath" 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+            }
+        }
+
+        # Step 1: Clear Temp Files
+        Send-Progress 25 "Clearing temporary files..."
+        Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
+        $TargetFolders = @(
+            "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
+            "C:\Windows\SoftwareDistribution\Download\*", 
+            "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
+        )
+        foreach ($Path in $TargetFolders) {
+            if (Test-Path $Path) {
+                Send-Log "Deleting files in: $Path"
+                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Step 2: Recycle Bin
+        Send-Progress 45 "Emptying Recycle Bin..."
+        Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+        Send-Log "Recycle bin emptied."
+
+        # Step 3: Cleanmgr
+        Send-Progress 60 "Running Disk Cleanup Utility..."
+        Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
+        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+        cleanmgr.exe $CleanParam 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+
+        # Step 4: Flush DNS
+        Send-Progress 75 "Flushing DNS Cache..."
+        Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
+        ipconfig.exe /flushdns 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+
+        # Step 5: DISM via Direct Process Reader Pipe
+        Send-Progress 85 "Optimizing DISM Component Store..."
+        Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
+
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pinfo.FileName = "Dism.exe"
+        $pinfo.Arguments = "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+        $pinfo.UseShellExecute = $false
+        $pinfo.RedirectStandardOutput = $true
+        $pinfo.CreateNoWindow = $true
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $pinfo
+        $process.Start() | Out-Null
+
+        $reader = $process.StandardOutput
+        $charBuffer = New-Object System.Text.StringBuilder
+
+        while (-not $process.HasExited -or -not $reader.EndOfStream) {
+            while ($reader.Peek() -ge 0) {
+                $ch = [char]$reader.Read()
+                if ($ch -eq "`n" -or $ch -eq "`r") {
+                    $outLine = $charBuffer.ToString().Trim()
+                    if ($outLine.Length -gt 0) {
+                        Send-Log $outLine
+                    }
+                    $charBuffer.Clear() | Out-Null
+                } else {
+                    $charBuffer.Append($ch) | Out-Null
+                }
+            }
+            Start-Sleep -Milliseconds 50
+        }
+
+        if ($charBuffer.Length -gt 0) {
+            Send-Log $charBuffer.ToString().Trim()
+        }
+
+        Send-Progress 100 "Optimization Complete!"
     }
 
-    # 2. Recycle Bin
-    $TxtStatus.Text = "Emptying Recycle Bin..."
-    $CleanProgress.Value = 45
-    Write-GuiLog "=== [2/5] EMPTYING RECYCLE BIN ==="
-    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-    Write-GuiLog "Recycle bin emptied."
+    $Job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $CurrentDir, $Global:RegFiles
 
-    # 3. Disk Cleanup Utility
-    $TxtStatus.Text = "Running Disk Cleanup Utility..."
-    $CleanProgress.Value = 60
-    Write-GuiLog "=== [3/5] RUNNING CLEANMGR UTILITY ==="
-    $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-    Run-ProcessWithLiveOutput "cleanmgr.exe" $CleanParam
+    # Timer to pull live events out of the Job stream directly into the UI
+    $Timer = New-Object System.Windows.Threading.DispatcherTimer
+    $Timer.Interval = [TimeSpan]::FromMilliseconds(100)
 
-    # 4. Flush DNS
-    $TxtStatus.Text = "Flushing DNS Cache..."
-    $CleanProgress.Value = 75
-    Write-GuiLog "=== [4/5] FLUSHING DNS CACHE ==="
-    Run-ProcessWithLiveOutput "ipconfig.exe" "/flushdns"
+    $Timer.Add_Tick({
+        $Results = Receive-Job -Job $Job
+        foreach ($Item in $Results) {
+            if ($Item.Type -eq "Log") {
+                Write-GuiLog $Item.Message
+            } elseif ($Item.Type -eq "Progress") {
+                Update-ProgressUI $Item.Value $Item.Status
+            }
+        }
 
-    # 5. DISM Optimization
-    $TxtStatus.Text = "Optimizing DISM Component Store..."
-    $CleanProgress.Value = 85
-    Write-GuiLog "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+        if ($Job.State -ne "Running") {
+            $Timer.Stop()
+            Remove-Job -Job $Job -Force
 
-    # Final Calculation
-    $CleanProgress.Value = 100
-    $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-    $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
-    
-    $ReadableSpace = if ($SpaceSavedBytes -le 0) {
-        "0 MB"
-    } elseif ($SpaceSavedBytes -gt 1GB) {
-        "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB"
-    } else {
-        "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB"
-    }
+            # Calculate space
+            $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+            $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
+            $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
+            if ($SpaceSavedBytes -gt 1GB) { $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" }
 
-    $TxtReclaimed.Text = $ReadableSpace
-    $TxtStatus.Text = "Optimization complete!"
-    $BtnStart.Content = "Finished"
-    Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
+            $TxtReclaimed.Text = $ReadableSpace
+            $BtnStart.Content = "Finished"
+            Write-GuiLog "=== CLEANUP COMPLETE! RECLAIMED: $ReadableSpace ==="
+        }
+    })
+
+    $Timer.Start()
 })
 
-# Display Window
 $Window.ShowDialog() | Out-Null
