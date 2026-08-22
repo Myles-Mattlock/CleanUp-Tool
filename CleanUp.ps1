@@ -322,7 +322,7 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 # Init Setup
 $Window.Add_Loaded({
     # --- Load Header Logo Image ---
-    $LogoPath = Join-Path $CurrentDir "logo.png"
+    $LogoPath = Join-Path $CurrentDir "Logo.jpg"
     if (Test-Path $LogoPath) {
         try {
             $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
