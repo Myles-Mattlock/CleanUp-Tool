@@ -120,8 +120,12 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Progress Bar -->
-        <ProgressBar x:Name="CleanProgress" Grid.Row="4" Height="10" Margin="0,15,0,15" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+        <!-- Progress Bar with Percentage Overlay -->
+        <Grid Grid.Row="4" Height="18" Margin="0,15,0,15">
+            <ProgressBar x:Name="CleanProgress" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+            <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" 
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
 
         <!-- Action Controls -->
         <Grid Grid.Row="5">
@@ -148,18 +152,19 @@ $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
 # Map UI Controls
-$ImgLogo         = $Window.FindName("ImgLogo")
-$ImgLogoRight    = $Window.FindName("ImgLogoRight")
-$TxtVersion      = $Window.FindName("TxtVersion")
-$TxtInitialSpace = $Window.FindName("TxtInitialSpace")
-$TxtReclaimed    = $Window.FindName("TxtReclaimed")
-$TxtDriveHealth  = $Window.FindName("TxtDriveHealth")
-$TxtDriveTemp    = $Window.FindName("TxtDriveTemp")
-$TxtLog          = $Window.FindName("TxtLog")
-$LogScroll       = $Window.FindName("LogScroll")
-$CleanProgress   = $Window.FindName("CleanProgress")
-$TxtStatus       = $Window.FindName("TxtStatus")
-$BtnStart        = $Window.FindName("BtnStart")
+$ImgLogo            = $Window.FindName("ImgLogo")
+$ImgLogoRight       = $Window.FindName("ImgLogoRight")
+$TxtVersion         = $Window.FindName("TxtVersion")
+$TxtInitialSpace    = $Window.FindName("TxtInitialSpace")
+$TxtReclaimed       = $Window.FindName("TxtReclaimed")
+$TxtDriveHealth     = $Window.FindName("TxtDriveHealth")
+$TxtDriveTemp       = $Window.FindName("TxtDriveTemp")
+$TxtLog             = $Window.FindName("TxtLog")
+$LogScroll          = $Window.FindName("LogScroll")
+$CleanProgress      = $Window.FindName("CleanProgress")
+$TxtProgressPercent = $Window.FindName("TxtProgressPercent")
+$TxtStatus          = $Window.FindName("TxtStatus")
+$BtnStart           = $Window.FindName("BtnStart")
 
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
@@ -382,6 +387,7 @@ $BtnStart.Add_Click({
         $prog = $null
         while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
             $CleanProgress.Value = $prog.Value
+            $TxtProgressPercent.Text = "$($prog.Value)%"
             $TxtStatus.Text = $prog.Status
         }
 
