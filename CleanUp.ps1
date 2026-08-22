@@ -122,7 +122,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 
         <!-- Progress Bar with Percentage Overlay -->
         <Grid Grid.Row="4" Height="18" Margin="0,15,0,15">
-            <ProgressBar x:Name="CleanProgress" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+            <ProgressBar x:Name="CleanProgress" Foreground="#007ACC" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
             <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" 
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
