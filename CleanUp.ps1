@@ -29,17 +29,18 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="760" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="820" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Grid Margin="25">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- 0: Header -->
             <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar -->
-            <RowDefinition Height="*"/>    <!-- 2: Output Log Terminal -->
-            <RowDefinition Height="Auto"/> <!-- 3: Reclaimed Storage Box -->
-            <RowDefinition Height="Auto"/> <!-- 4: Progress Bar -->
-            <RowDefinition Height="Auto"/> <!-- 5: Action Controls -->
+            <RowDefinition Height="Auto"/> <!-- 2: Task Checkboxes -->
+            <RowDefinition Height="*"/>    <!-- 3: Output Log Terminal -->
+            <RowDefinition Height="Auto"/> <!-- 4: Reclaimed Storage Box -->
+            <RowDefinition Height="Auto"/> <!-- 5: Progress Bar -->
+            <RowDefinition Height="Auto"/> <!-- 6: Action Controls -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -66,7 +67,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         </Border>
 
         <!-- Top Stats Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,20">
+        <Grid Grid.Row="1" Margin="0,0,0,15">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="15"/>
@@ -97,8 +98,22 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Border>
         </Grid>
 
+        <!-- Task Selection Checkboxes -->
+        <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
+            <StackPanel>
+                <TextBlock Text="SELECT TASKS TO RUN" FontSize="11" FontWeight="Bold" Foreground="#888888" Margin="0,0,0,8"/>
+                <WrapPanel>
+                    <CheckBox x:Name="ChkTempFiles" Content="Clear Temp Files &amp; System Logs" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkRecycleBin" Content="Empty Recycle Bin" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkCleanmgr" Content="Run Disk Cleanup Utility" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkFlushDNS" Content="Flush DNS Cache" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkDism" Content="DISM Component Store Cleanup" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
         <!-- Output Log Terminal -->
-        <Border Grid.Row="2" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
+        <Border Grid.Row="3" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
             <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                 <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" 
                          FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap"/>
@@ -106,7 +121,7 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         </Border>
 
         <!-- Reclaimed Storage Box -->
-        <Border Grid.Row="3" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
+        <Border Grid.Row="4" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -121,14 +136,14 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
         </Border>
 
         <!-- Progress Bar with Percentage Overlay -->
-        <Grid Grid.Row="4" Height="18" Margin="0,15,0,15">
+        <Grid Grid.Row="5" Height="18" Margin="0,15,0,15">
             <ProgressBar x:Name="CleanProgress" Foreground="#00E5FF" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
             <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" 
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
 
         <!-- Action Controls -->
-        <Grid Grid.Row="5">
+        <Grid Grid.Row="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -165,6 +180,13 @@ $CleanProgress      = $Window.FindName("CleanProgress")
 $TxtProgressPercent = $Window.FindName("TxtProgressPercent")
 $TxtStatus          = $Window.FindName("TxtStatus")
 $BtnStart           = $Window.FindName("BtnStart")
+
+# Map Task Checkboxes
+$ChkTempFiles       = $Window.FindName("ChkTempFiles")
+$ChkRecycleBin      = $Window.FindName("ChkRecycleBin")
+$ChkCleanmgr        = $Window.FindName("ChkCleanmgr")
+$ChkFlushDNS        = $Window.FindName("ChkFlushDNS")
+$ChkDism            = $Window.FindName("ChkDism")
 
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
@@ -273,15 +295,38 @@ $Window.Add_Loaded({
 
 # --- ASYNCHRONOUS RUNSPACE WORKER ---
 $BtnStart.Add_Click({
+    # Read state of task selections
+    $SelectedTasks = @{
+        DoTemp      = $ChkTempFiles.IsChecked
+        DoRecycle   = $ChkRecycleBin.IsChecked
+        DoCleanmgr  = $ChkCleanmgr.IsChecked
+        DoFlushDNS  = $ChkFlushDNS.IsChecked
+        DoDism      = $ChkDism.IsChecked
+    }
+
+    # Verify at least one task is chosen
+    $TotalSelected = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
+    if ($TotalSelected -eq 0) {
+        $TxtStatus.Text = "Please select at least one task to run."
+        return
+    }
+
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
+    
+    # Disable checkboxes during cleanup
+    $ChkTempFiles.IsEnabled  = $false
+    $ChkRecycleBin.IsEnabled = $false
+    $ChkCleanmgr.IsEnabled   = $false
+    $ChkFlushDNS.IsEnabled   = $false
+    $ChkDism.IsEnabled       = $false
 
     $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     $Global:ProgressQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     $Global:FinishedQueue = [System.Collections.Concurrent.ConcurrentQueue[bool]]::new()
 
     $ScriptBlock = {
-        param($CurrentDir, $RegFiles, $LogQueue, $ProgressQueue, $FinishedQueue)
+        param($CurrentDir, $RegFiles, $SelectedTasks, $LogQueue, $ProgressQueue, $FinishedQueue)
 
         function Send-Log ($msg) {
             if (-not [string]::IsNullOrWhiteSpace($msg)) {
@@ -318,53 +363,74 @@ $BtnStart.Add_Click({
             }
         }
 
-        # Step 0: Registry
-        Send-Progress 10 "Importing Registry configurations..."
-        Send-Log "=== [0/5] IMPORTING REGISTRY CONFIGURATIONS ==="
+        # Calculate dynamic progress step sizes
+        $TotalTasks = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
+        $CurrentTaskIndex = 0
+
+        # Always apply registry prep settings automatically
         foreach ($File in $RegFiles) {
             $FilePath = Join-Path $CurrentDir $File
             if (Test-Path $FilePath) {
-                Send-Log "Applying registry file: $File"
                 Run-SilentProcess "reg.exe" "import `"$FilePath`""
             }
         }
 
-        # Step 1: Clear Temp Files
-        Send-Progress 25 "Clearing temporary files..."
-        Send-Log "=== [1/5] CLEARING TEMP FILES AND LOGS ==="
-        $TargetFolders = @(
-            "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
-            "C:\Windows\SoftwareDistribution\Download\*", 
-            "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
-        )
-        foreach ($Path in $TargetFolders) {
-            if (Test-Path $Path) {
-                Send-Log "Deleting files in: $Path"
-                Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # 1. Clear Temp Files
+        if ($SelectedTasks.DoTemp) {
+            $CurrentTaskIndex++
+            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
+            Send-Progress $Percent "Clearing temporary files..."
+            Send-Log "=== CLEARING TEMP FILES AND LOGS ==="
+            $TargetFolders = @(
+                "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
+                "C:\Windows\SoftwareDistribution\Download\*", 
+                "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
+            )
+            foreach ($Path in $TargetFolders) {
+                if (Test-Path $Path) {
+                    Send-Log "Deleting files in: $Path"
+                    Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+                }
             }
         }
 
-        # Step 2: Recycle Bin
-        Send-Progress 45 "Emptying Recycle Bin..."
-        Send-Log "=== [2/5] EMPTYING RECYCLE BIN ==="
-        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-        Send-Log "Recycle bin emptied."
+        # 2. Empty Recycle Bin
+        if ($SelectedTasks.DoRecycle) {
+            $CurrentTaskIndex++
+            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
+            Send-Progress $Percent "Emptying Recycle Bin..."
+            Send-Log "=== EMPTYING RECYCLE BIN ==="
+            Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+            Send-Log "Recycle bin emptied."
+        }
 
-        # Step 3: Cleanmgr
-        Send-Progress 60 "Running Disk Cleanup Utility..."
-        Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
-        $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-        Run-SilentProcess "cleanmgr.exe" $CleanParam
+        # 3. Disk Cleanup Utility
+        if ($SelectedTasks.DoCleanmgr) {
+            $CurrentTaskIndex++
+            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
+            Send-Progress $Percent "Running Disk Cleanup Utility..."
+            Send-Log "=== RUNNING CLEANMGR UTILITY ==="
+            $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
+            Run-SilentProcess "cleanmgr.exe" $CleanParam
+        }
 
-        # Step 4: Flush DNS
-        Send-Progress 75 "Flushing DNS Cache..."
-        Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
-        Run-SilentProcess "ipconfig.exe" "/flushdns"
+        # 4. Flush DNS
+        if ($SelectedTasks.DoFlushDNS) {
+            $CurrentTaskIndex++
+            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
+            Send-Progress $Percent "Flushing DNS Cache..."
+            Send-Log "=== FLUSHING DNS CACHE ==="
+            Run-SilentProcess "ipconfig.exe" "/flushdns"
+        }
 
-        # Step 5: DISM Optimization
-        Send-Progress 85 "Optimizing DISM Component Store..."
-        Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-        Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+        # 5. DISM Optimization
+        if ($SelectedTasks.DoDism) {
+            $CurrentTaskIndex++
+            $Percent = [Math]::Round(($CurrentTaskIndex / $TotalTasks) * 100)
+            Send-Progress $Percent "Optimizing DISM Component Store..."
+            Send-Log "=== RUNNING DISM COMPONENT STORE CLEANUP ==="
+            Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+        }
 
         Send-Progress 100 "Optimization Complete!"
         $FinishedQueue.Enqueue($true)
@@ -377,6 +443,7 @@ $BtnStart.Add_Click({
     [void]$Global:PowerShell.AddScript($ScriptBlock)
     [void]$Global:PowerShell.AddArgument($CurrentDir)
     [void]$Global:PowerShell.AddArgument($Global:RegFiles)
+    [void]$Global:PowerShell.AddArgument($SelectedTasks)
     [void]$Global:PowerShell.AddArgument($Global:LogQueue)
     [void]$Global:PowerShell.AddArgument($Global:ProgressQueue)
     [void]$Global:PowerShell.AddArgument($Global:FinishedQueue)
@@ -415,9 +482,16 @@ $BtnStart.Add_Click({
 
             $TxtReclaimed.Text = $ReadableSpace
             
+            # Re-enable controls
             $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
             $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
+
+            $ChkTempFiles.IsEnabled  = $true
+            $ChkRecycleBin.IsEnabled = $true
+            $ChkCleanmgr.IsEnabled   = $true
+            $ChkFlushDNS.IsEnabled   = $true
+            $ChkDism.IsEnabled       = $true
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
         }
