@@ -60,47 +60,67 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
             </Grid>
         </Border>
 
-        <!-- Stats & Health Bar -->
+        <!-- Stats & Health Bar (6 Columns) -->
         <Grid Grid.Row="1" Margin="0,0,0,20">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Initial Free Space -->
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0"/>
+                    <TextBlock Text="INITIAL FREE" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="15" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Reclaimed Storage -->
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="18" FontWeight="Bold" Foreground="#00FF66" Margin="0,6,0,0"/>
+                    <TextBlock Text="RECLAIMED" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtReclaimed" Text="0 MB" FontSize="15" FontWeight="Bold" Foreground="#00FF66" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Drive Wear / Health -->
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
+                    <TextBlock Text="DRIVE HEALTH" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="15" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
 
             <!-- Drive Temperature -->
-            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="15">
+            <Border Grid.Column="6" Background="#2D2D30" CornerRadius="6" Padding="10">
                 <StackPanel>
-                    <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
+                    <TextBlock Text="TEMP" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="15" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Power On Hours -->
+            <Border Grid.Column="8" Background="#2D2D30" CornerRadius="6" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="POWER ON HRS" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveHours" Text="-- hrs" FontSize="15" FontWeight="Bold" Foreground="#E082FF" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Power Cycles -->
+            <Border Grid.Column="10" Background="#2D2D30" CornerRadius="6" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="POWER CYCLES" FontSize="9" FontWeight="Bold" Foreground="#888888"/>
+                    <TextBlock x:Name="TxtDriveCycles" Text="--" FontSize="15" FontWeight="Bold" Foreground="#FF8080" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -148,6 +168,8 @@ $TxtInitialSpace = $Window.FindName("TxtInitialSpace")
 $TxtReclaimed    = $Window.FindName("TxtReclaimed")
 $TxtDriveHealth  = $Window.FindName("TxtDriveHealth")
 $TxtDriveTemp    = $Window.FindName("TxtDriveTemp")
+$TxtDriveHours   = $Window.FindName("TxtDriveHours")
+$TxtDriveCycles  = $Window.FindName("TxtDriveCycles")
 $TxtLog          = $Window.FindName("TxtLog")
 $LogScroll       = $Window.FindName("LogScroll")
 $CleanProgress   = $Window.FindName("CleanProgress")
@@ -168,13 +190,15 @@ function Get-DriveHealthDiagnostics {
     Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
     
     $HealthStatusText = "Healthy"
-    $TempStatusText = "N/A"
+    $TempStatusText   = "N/A"
+    $HoursStatusText  = "N/A"
+    $CyclesStatusText = "N/A"
 
     try {
         # 1. Physical Disk Check via CIM
         $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
         
-        # 2. Query WMI MSStorageDriver namespace for SMART Data & Temperature
+        # 2. Query WMI MSStorageDriver namespace for SMART Data
         $SmartPredict = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue
         $SmartData    = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
 
@@ -186,38 +210,57 @@ function Get-DriveHealthDiagnostics {
 
             Write-GuiLog "Drive [$Index]: $Model ($Interface) - SMART Status: $Status"
 
-            # Parse SMART Vendor Bytes for Temperature (Attribute 0xC2 / 194 or 0xBE / 190)
-            $DiskSmart = $SmartData | Where-Object { $_.InstanceName -like "*$Index*" -or $_.InstanceName -like "*$Model*" }
-            
-            if ($DiskSmart -and $DiskSmart.VendorSpecific) {
-                $VendorBytes = $DiskSmart.VendorSpecific
-                # Walk SMART attributes array (12 bytes per attribute)
-                for ($i = 2; $i -lt $VendorBytes.Length - 12; $i += 12) {
-                    $AttrId = $VendorBytes[$i]
-                    # Check for Temperature Attribute IDs (194/0xC2 or 190/0xBE)
-                    if ($AttrId -eq 194 -or $AttrId -eq 190) {
-                        $RawTemp = $VendorBytes[$i + 5]
-                        if ($RawTemp -gt 0 -and $RawTemp -lt 100) {
-                            $TempStatusText = "$RawTemp °C"
-                            Write-GuiLog "  > Raw SMART Temp Reading: $TempStatusText"
-                            break
-                        }
+            # Check PhysicalDisk reliability counters directly for Hours & Power Cycles
+            $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
+            if ($PhysDisk) {
+                $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                if ($Counter) {
+                    if ($Counter.Temperature -gt 0) {
+                        $TempStatusText = "$($Counter.Temperature) °C"
+                        Write-GuiLog "  > Storage Reliability Temp: $TempStatusText"
+                    }
+                    if ($Counter.Wear -ne $null) {
+                        $HealthStatusText = "$(100 - $Counter.Wear)% Health"
+                        Write-GuiLog "  > Wear Remaining: $HealthStatusText"
+                    }
+                    if ($Counter.PowerOnHours -ne $null) {
+                        $HoursStatusText = "$($Counter.PowerOnHours) hrs"
+                        Write-GuiLog "  > Power On Hours: $HoursStatusText"
+                    }
+                    if ($Counter.PowerCycleCount -ne $null) {
+                        $CyclesStatusText = "$($Counter.PowerCycleCount)"
+                        Write-GuiLog "  > Power Cycles: $CyclesStatusText"
                     }
                 }
             }
 
-            # If WMI temperature parse didn't hit, check PhysicalDisk counters silently
-            if ($TempStatusText -eq "N/A") {
-                $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
-                if ($PhysDisk) {
-                    $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter -and $Counter.Temperature -gt 0) {
-                        $TempStatusText = "$($Counter.Temperature) °C"
-                        Write-GuiLog "  > Storage Reliability Temp: $TempStatusText"
+            # Parse SMART Vendor Bytes for Fallback (Temp: 194/190, Hours: 9, Cycles: 12)
+            $DiskSmart = $SmartData | Where-Object { $_.InstanceName -like "*$Index*" -or $_.InstanceName -like "*$Model*" }
+            if ($DiskSmart -and $DiskSmart.VendorSpecific) {
+                $VendorBytes = $DiskSmart.VendorSpecific
+                for ($i = 2; $i -lt $VendorBytes.Length - 12; $i += 12) {
+                    $AttrId = $VendorBytes[$i]
+                    
+                    # Temp Attribute (194/0xC2 or 190/0xBE)
+                    if (($AttrId -eq 194 -or $AttrId -eq 190) -and $TempStatusText -eq "N/A") {
+                        $RawTemp = $VendorBytes[$i + 5]
+                        if ($RawTemp -gt 0 -and $RawTemp -lt 100) {
+                            $TempStatusText = "$RawTemp °C"
+                        }
                     }
-                    if ($Counter -and $Counter.Wear -ne $null) {
-                        $HealthStatusText = "$(100 - $Counter.Wear)% Health"
-                        Write-GuiLog "  > Wear Remaining: $HealthStatusText"
+                    # Power-On Hours Attribute (9 / 0x09)
+                    if ($AttrId -eq 9 -and $HoursStatusText -eq "N/A") {
+                        $RawHours = [BitConverter]::ToUInt32($VendorBytes, $i + 5)
+                        if ($RawHours -gt 0) {
+                            $HoursStatusText = "$RawHours hrs"
+                        }
+                    }
+                    # Power Cycle Count Attribute (12 / 0x0C)
+                    if ($AttrId -eq 12 -and $CyclesStatusText -eq "N/A") {
+                        $RawCycles = [BitConverter]::ToUInt32($VendorBytes, $i + 5)
+                        if ($RawCycles -gt 0) {
+                            $CyclesStatusText = "$RawCycles"
+                        }
                     }
                 }
             }
@@ -233,7 +276,9 @@ function Get-DriveHealthDiagnostics {
 
     # Update UI Cards
     $TxtDriveHealth.Text = $HealthStatusText
-    $TxtDriveTemp.Text = $TempStatusText
+    $TxtDriveTemp.Text   = $TempStatusText
+    $TxtDriveHours.Text  = $HoursStatusText
+    $TxtDriveCycles.Text = $CyclesStatusText
 }
 
 # --- UPDATE CHECKER (STABLE ONLY) ---
