@@ -11,7 +11,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "1.0.0" 
+$Global:CurrentVersion = "1.0.1" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
@@ -127,6 +127,56 @@ function Write-GuiLog ($Message) {
     })
 }
 
+# --- UPDATE CHECKER (STABLE ONLY) ---
+function Check-ForUpdates {
+    Write-GuiLog "Checking for updates..."
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
+        $Url = "https://api.github.com/repos/$Global:RepoName/releases"
+
+        # Fetch releases and filter out anything marked as a Prerelease (Beta)
+        $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
+        $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
+
+        $LocalVersion = [version]($Global:CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
+        $UpdateFound = $null
+
+        foreach ($Rel in $StableReleases) {
+            $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
+
+            if ($RemoteVersion -gt $LocalVersion) {
+                $UpdateFound = $Rel
+                break 
+            }
+        }
+
+        if ($UpdateFound) {
+            Write-GuiLog "[!] NEW STABLE UPDATE AVAILABLE: $($UpdateFound.tag_name)"
+            Write-GuiLog "Currently running: v$Global:CurrentVersion"
+            Write-GuiLog "Download URL: $($UpdateFound.html_url)"
+            
+            $UpdateChoice = [System.Windows.Forms.MessageBox]::Show(
+                "A new stable version ($($UpdateFound.tag_name)) is available.`n`nWould you like to open the download page now?", 
+                "Update Available", 
+                "YesNo", 
+                "Information"
+            )
+            
+            if ($UpdateChoice -eq "Yes") { 
+                Start-Process $UpdateFound.html_url
+                Write-GuiLog "Redirecting to download page. Closing application..."
+                Start-Sleep -Seconds 2
+                $Window.Close()
+            }
+        } else {
+            Write-GuiLog "You are running the latest stable version (v$Global:CurrentVersion)."
+        }
+    } catch {
+        Write-GuiLog "Note: Update check skipped (Connection issue or release missing)."
+    }
+}
+
 # Real-Time Output Process Runner
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -177,7 +227,9 @@ $Window.Add_Loaded({
     $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
     
     Write-GuiLog "System Cleanup Tool Initialized."
-    Write-GuiLog "Ready to optimize system storage."
+    
+    # Run the GitHub update check on startup
+    Check-ForUpdates
 })
 
 # Cleanup Action
@@ -186,8 +238,6 @@ $BtnStart.Add_Click({
     $BtnStart.Content = "Cleaning..."
     $CleanProgress.Value = 0
 
-    # Execute step-by-step with live streaming output
-    
     # 0. Registry Configs
     $TxtStatus.Text = "Importing Registry configurations..."
     $CleanProgress.Value = 10
