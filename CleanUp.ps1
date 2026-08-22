@@ -10,6 +10,12 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
+# --- NATIVE WINDOW DWM COLORING (WIN 11 TITLEBAR ACCENT) ---
+$DwmApi = Add-Type -MemberDefinition @"
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+"@ -Name "DwmApi" -Namespace "Win32" -PassThru
+
 # --- CONFIGURATION ---
 $Global:CurrentVersion = "3.0.0" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
@@ -326,6 +332,16 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
 # Init Setup
 $Window.Add_Loaded({
+    # --- Set Title bar Color via DWM API ---
+    try {
+        $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
+        # DWMWA_CAPTION_COLOR = 35
+        $CaptionAttr = 35
+        # COLORREF format in hex (BGR): 0x00FFE500 represents Cyan (#00E5FF)
+        $CyanColor = 0x00FFE500 
+        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, $CaptionAttr, [ref]$CyanColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
+    } catch {}
+
     # --- Load Header Left Logo Image ---
     $LogoPath = Join-Path $CurrentDir "Logo.jpg"
     if (Test-Path $LogoPath) {
