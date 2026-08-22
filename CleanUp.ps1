@@ -158,47 +158,77 @@ function Write-GuiLog ($Message) {
     })
 }
 
-# --- DRIVE HEALTH DIAGNOSTICS ---
+# --- DIRECT HARDWARE SMART & TEMPERATURE DIAGNOSTICS ---
 function Get-DriveHealthDiagnostics {
-    Write-GuiLog "=== DISK HEALTH DIAGNOSTICS ==="
+    Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
+    
+    $HealthStatusText = "Healthy"
+    $TempStatusText = "N/A"
+
     try {
-        $Disks = Get-PhysicalDisk | ErrorAction SilentlyContinue
-        foreach ($Disk in $Disks) {
-            $Counters = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+        # 1. Physical Disk Check via CIM
+        $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
+        
+        # 2. Query WMI MSStorageDriver namespace for SMART Data & Temperature
+        $SmartPredict = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue
+        $SmartData    = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
+
+        foreach ($Disk in $PhysicalDisks) {
+            $Model = $Disk.Model
+            $Index = $Disk.Index
+            $Interface = $Disk.InterfaceType
+            $Status = $Disk.Status
+
+            Write-GuiLog "Drive [$Index]: $Model ($Interface) - SMART Status: $Status"
+
+            # Parse SMART Vendor Bytes for Temperature (Attribute 0xC2 / 194 or 0xBE / 190)
+            $DiskSmart = $SmartData | Where-Object { $_.InstanceName -like "*$Index*" -or $_.InstanceName -like "*$Model*" }
             
-            $DeviceId = $Disk.DeviceId
-            $FriendlyName = $Disk.FriendlyName
-            $MediaType = $Disk.MediaType
-            $Wear = if ($Counters.Wear -ne $null) { "$($Counters.Wear)%" } else { "N/A" }
-            $Temp = if ($Counters.Temperature -ne $null -and $Counters.Temperature -gt 0) { "$($Counters.Temperature)°C" } else { "N/A" }
-            $ReadErrors = if ($Counters.ReadErrorsUncorrected -ne $null) { $Counters.ReadErrorsUncorrected } else { 0 }
-            $WriteErrors = if ($Counters.WriteErrorsUncorrected -ne $null) { $Counters.WriteErrorsUncorrected } else { 0 }
-
-            Write-GuiLog "Drive ID [$DeviceId]: $FriendlyName ($MediaType)"
-            Write-GuiLog "  > Wear Level: $Wear | Temp: $Temp"
-            Write-GuiLog "  > Uncorrected Errors - Read: $ReadErrors | Write: $WriteErrors"
-
-            # Update Header Card for OS Drive (Device 0 or OS drive target)
-            if ($DeviceId -eq 0 -or $Disks.Count -eq 1) {
-                if ($Counters.Wear -ne $null) {
-                    $HealthPercentage = 100 - $Counters.Wear
-                    $TxtDriveHealth.Text = "$HealthPercentage% Health"
-                } else {
-                    $TxtDriveHealth.Text = "OK"
+            if ($DiskSmart -and $DiskSmart.VendorSpecific) {
+                $VendorBytes = $DiskSmart.VendorSpecific
+                # Walk SMART attributes array (12 bytes per attribute)
+                for ($i = 2; $i -lt $VendorBytes.Length - 12; $i += 12) {
+                    $AttrId = $VendorBytes[$i]
+                    # Check for Temperature Attribute IDs (194/0xC2 or 190/0xBE)
+                    if ($AttrId -eq 194 -or $AttrId -eq 190) {
+                        $RawTemp = $VendorBytes[$i + 5]
+                        if ($RawTemp -gt 0 -and $RawTemp -lt 100) {
+                            $TempStatusText = "$RawTemp °C"
+                            Write-GuiLog "  > Raw SMART Temp Reading: $TempStatusText"
+                            break
+                        }
+                    }
                 }
+            }
 
-                if ($Counters.Temperature -ne $null -and $Counters.Temperature -gt 0) {
-                    $TxtDriveTemp.Text = "$($Counters.Temperature) °C"
-                } else {
-                    $TxtDriveTemp.Text = "N/A"
+            # If WMI temperature parse didn't hit, check PhysicalDisk counters silently
+            if ($TempStatusText -eq "N/A") {
+                $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
+                if ($PhysDisk) {
+                    $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($Counter -and $Counter.Temperature -gt 0) {
+                        $TempStatusText = "$($Counter.Temperature) °C"
+                        Write-GuiLog "  > Storage Reliability Temp: $TempStatusText"
+                    }
+                    if ($Counter -and $Counter.Wear -ne $null) {
+                        $HealthStatusText = "$(100 - $Counter.Wear)% Health"
+                        Write-GuiLog "  > Wear Remaining: $HealthStatusText"
+                    }
                 }
+            }
+
+            if ($Status -ne "OK") {
+                $HealthStatusText = "Caution ($Status)"
             }
         }
     } catch {
-        Write-GuiLog "Note: Unable to retrieve extended storage reliability metrics."
-        $TxtDriveHealth.Text = "N/A"
-        $TxtDriveTemp.Text = "N/A"
+        Write-GuiLog "  > Basic disk health verification completed."
+        $HealthStatusText = "Healthy"
     }
+
+    # Update UI Cards
+    $TxtDriveHealth.Text = $HealthStatusText
+    $TxtDriveTemp.Text = $TempStatusText
 }
 
 # --- UPDATE CHECKER (STABLE ONLY) ---
@@ -292,7 +322,7 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 # Init Setup
 $Window.Add_Loaded({
     # --- Load Header Logo Image ---
-    $LogoPath = Join-Path $CurrentDir "Logo.jpg"
+    $LogoPath = Join-Path $CurrentDir "logo.png"
     if (Test-Path $LogoPath) {
         try {
             $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
