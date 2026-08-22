@@ -163,17 +163,8 @@ $BtnStart        = $Window.FindName("BtnStart")
 
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
-    $TxtLog.Dispatcher.Invoke([Action]{
-        $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
-        $LogScroll.ScrollToEnd()
-    })
-}
-
-function Update-ProgressUI ($ProgressVal, $StatusMsg) {
-    $CleanProgress.Dispatcher.Invoke([Action]{
-        $CleanProgress.Value = $ProgressVal
-        $TxtStatus.Text = $StatusMsg
-    })
+    $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
+    $LogScroll.ScrollToEnd()
 }
 
 # --- DIRECT HARDWARE SMART DIAGNOSTICS ---
@@ -184,7 +175,6 @@ function Get-DriveHealthDiagnostics {
 
     try {
         $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
-        $SmartData    = Get-CimInstance -Namespace "root\wmi" -ClassName MSStorageDriver_FailurePredictData -ErrorAction SilentlyContinue
 
         foreach ($Disk in $PhysicalDisks) {
             $Model = $Disk.Model
@@ -276,20 +266,60 @@ $Window.Add_Loaded({
     Check-ForUpdates
 })
 
-# --- ASYNCHRONOUS BACKGROUND WORKER ---
+# --- ASYNCHRONOUS RUNSPACE WORKER (THREAD-SAFE QUEUE) ---
 $BtnStart.Add_Click({
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
 
-    # Launch cleanup in a background Job so UI thread NEVER freezes
+    # Thread-Safe Concurrent Queues
+    $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    $Global:ProgressQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $Global:CleanupFinished = $false
+
+    # Background Runspace Definition
     $ScriptBlock = {
-        param($CurrentDir, $RegFiles)
+        param($CurrentDir, $RegFiles, $LogQueue, $ProgressQueue)
 
         function Send-Log ($msg) {
-            [PSCustomObject]@{ Type = "Log"; Message = $msg }
+            if (-not [string]::IsNullOrWhiteSpace($msg)) {
+                $LogQueue.Enqueue($msg)
+            }
         }
         function Send-Progress ($val, $status) {
-            [PSCustomObject]@{ Type = "Progress"; Value = $val; Status = $status }
+            $ProgressQueue.Enqueue(@{ Value = $val; Status = $status })
+        }
+
+        function Run-ProcessInJob ($exe, $args) {
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = $exe
+            $pinfo.Arguments = $args
+            $pinfo.UseShellExecute = $false
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.RedirectStandardError = $true
+            $pinfo.CreateNoWindow = $true
+
+            $p = New-Object System.Diagnostics.Process
+            $p.StartInfo = $pinfo
+            $p.Start() | Out-Null
+
+            $stdOut = $p.StandardOutput
+            $sb = New-Object System.Text.StringBuilder
+
+            while (-not $p.HasExited -or -not $stdOut.EndOfStream) {
+                while ($stdOut.Peek() -ge 0) {
+                    $ch = [char]$stdOut.Read()
+                    if ($ch -eq "`n" -or $ch -eq "`r") {
+                        $line = $sb.ToString().Trim()
+                        if ($line.Length -gt 0) { Send-Log $line }
+                        $sb.Clear() | Out-Null
+                    } else {
+                        $sb.Append($ch) | Out-Null
+                    }
+                }
+                Start-Sleep -Milliseconds 30
+            }
+            if ($sb.Length -gt 0) { Send-Log $sb.ToString().Trim() }
+            $p.WaitForExit()
         }
 
         # Step 0: Registry
@@ -299,7 +329,7 @@ $BtnStart.Add_Click({
             $FilePath = Join-Path $CurrentDir $File
             if (Test-Path $FilePath) {
                 Send-Log "Applying registry file: $File"
-                reg.exe import "$FilePath" 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+                Run-ProcessInJob "reg.exe" "import `"$FilePath`""
             }
         }
 
@@ -328,83 +358,67 @@ $BtnStart.Add_Click({
         Send-Progress 60 "Running Disk Cleanup Utility..."
         Send-Log "=== [3/5] RUNNING CLEANMGR UTILITY ==="
         $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-        cleanmgr.exe $CleanParam 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+        Run-ProcessInJob "cleanmgr.exe" $CleanParam
 
         # Step 4: Flush DNS
         Send-Progress 75 "Flushing DNS Cache..."
         Send-Log "=== [4/5] FLUSHING DNS CACHE ==="
-        ipconfig.exe /flushdns 2>&1 | ForEach-Object { Send-Log $_.ToString() }
+        Run-ProcessInJob "ipconfig.exe" "/flushdns"
 
-        # Step 5: DISM via Direct Process Reader Pipe
+        # Step 5: DISM Optimization
         Send-Progress 85 "Optimizing DISM Component Store..."
         Send-Log "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-
-        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-        $pinfo.FileName = "Dism.exe"
-        $pinfo.Arguments = "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
-        $pinfo.UseShellExecute = $false
-        $pinfo.RedirectStandardOutput = $true
-        $pinfo.CreateNoWindow = $true
-
-        $process = New-Object System.Diagnostics.Process
-        $process.StartInfo = $pinfo
-        $process.Start() | Out-Null
-
-        $reader = $process.StandardOutput
-        $charBuffer = New-Object System.Text.StringBuilder
-
-        while (-not $process.HasExited -or -not $reader.EndOfStream) {
-            while ($reader.Peek() -ge 0) {
-                $ch = [char]$reader.Read()
-                if ($ch -eq "`n" -or $ch -eq "`r") {
-                    $outLine = $charBuffer.ToString().Trim()
-                    if ($outLine.Length -gt 0) {
-                        Send-Log $outLine
-                    }
-                    $charBuffer.Clear() | Out-Null
-                } else {
-                    $charBuffer.Append($ch) | Out-Null
-                }
-            }
-            Start-Sleep -Milliseconds 50
-        }
-
-        if ($charBuffer.Length -gt 0) {
-            Send-Log $charBuffer.ToString().Trim()
-        }
+        Run-ProcessInJob "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
 
         Send-Progress 100 "Optimization Complete!"
     }
 
-    $Job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $CurrentDir, $Global:RegFiles
+    # Spin up background Runspace
+    $Runspace = [runspacefactory]::CreateRunspace()
+    $Runspace.Open()
+    $PowerShell = [powershell]::Create()
+    $PowerShell.Runspace = $Runspace
+    [void]$PowerShell.AddScript($ScriptBlock)
+    [void]$PowerShell.AddArgument($CurrentDir)
+    [void]$PowerShell.AddArgument($Global:RegFiles)
+    [void]$PowerShell.AddArgument($Global:LogQueue)
+    [void]$PowerShell.AddArgument($Global:ProgressQueue)
+    
+    $AsyncResult = $PowerShell.BeginInvoke()
 
-    # Timer to pull live events out of the Job stream directly into the UI
+    # DispatcherTimer polls queues and flushes UI instantly
     $Timer = New-Object System.Windows.Threading.DispatcherTimer
-    $Timer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $Timer.Interval = [TimeSpan]::FromMilliseconds(50)
 
     $Timer.Add_Tick({
-        $Results = Receive-Job -Job $Job
-        foreach ($Item in $Results) {
-            if ($Item.Type -eq "Log") {
-                Write-GuiLog $Item.Message
-            } elseif ($Item.Type -eq "Progress") {
-                Update-ProgressUI $Item.Value $Item.Status
-            }
+        # Empty Log Queue into GUI
+        $msg = ""
+        while ($Global:LogQueue.TryDequeue([ref]$msg)) {
+            Write-GuiLog $msg
         }
 
-        if ($Job.State -ne "Running") {
-            $Timer.Stop()
-            Remove-Job -Job $Job -Force
+        # Empty Progress Queue into GUI
+        $prog = $null
+        while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
+            $CleanProgress.Value = $prog.Value
+            $TxtStatus.Text = $prog.Status
+        }
 
-            # Calculate space
+        # Cleanup on Completion
+        if ($AsyncResult.IsCompleted) {
+            $Timer.Stop()
+            $PowerShell.EndInvoke($AsyncResult)
+            $PowerShell.Dispose()
+            $Runspace.Dispose()
+
+            # Space Calculation
             $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
             $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
-            $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
-            if ($SpaceSavedBytes -gt 1GB) { $ReadableSpace = "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" }
+            $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
             $TxtReclaimed.Text = $ReadableSpace
             $BtnStart.Content = "Finished"
-            Write-GuiLog "=== CLEANUP COMPLETE! RECLAIMED: $ReadableSpace ==="
+            Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
         }
     })
 
