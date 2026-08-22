@@ -42,9 +42,10 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Header Logo -->
+                <!-- Left Logo -->
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="42" Height="42" Margin="0,0,15,0" VerticalAlignment="Center" Stretch="Uniform"/>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -52,7 +53,10 @@ if ([string]::IsNullOrEmpty($CurrentDir)) { $CurrentDir = Get-Location }
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
                 </StackPanel>
                 
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="14" FontWeight="SemiBold" Margin="0,0,15,0"/>
+
+                <!-- Right Logo -->
+                <Image x:Name="ImgLogoRight" Grid.Column="3" Width="42" Height="42" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
@@ -138,6 +142,7 @@ $Window = [Windows.Markup.XamlReader]::Load($reader)
 
 # Map UI Controls
 $ImgLogo         = $Window.FindName("ImgLogo")
+$ImgLogoRight    = $Window.FindName("ImgLogoRight")
 $TxtVersion      = $Window.FindName("TxtVersion")
 $TxtInitialSpace = $Window.FindName("TxtInitialSpace")
 $TxtReclaimed    = $Window.FindName("TxtReclaimed")
@@ -321,7 +326,7 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
 # Init Setup
 $Window.Add_Loaded({
-    # --- Load Header Logo Image ---
+    # --- Load Header Left Logo Image ---
     $LogoPath = Join-Path $CurrentDir "Logo.jpg"
     if (Test-Path $LogoPath) {
         try {
@@ -332,7 +337,22 @@ $Window.Add_Loaded({
             $bitmap.EndInit()
             $ImgLogo.Source = $bitmap
         } catch {
-            Write-GuiLog "Warning: Could not load logo image."
+            Write-GuiLog "Warning: Could not load left logo image."
+        }
+    }
+
+    # --- Load Header Right Logo Image ---
+    $LogoRightPath = Join-Path $CurrentDir "LogoRight.jpg"
+    if (Test-Path $LogoRightPath) {
+        try {
+            $bitmapRight = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bitmapRight.BeginInit()
+            $bitmapRight.UriSource = New-Object System.Uri($LogoRightPath, [System.UriKind]::Absolute)
+            $bitmapRight.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmapRight.EndInit()
+            $ImgLogoRight.Source = $bitmapRight
+        } catch {
+            Write-GuiLog "Warning: Could not load right logo image."
         }
     }
 
