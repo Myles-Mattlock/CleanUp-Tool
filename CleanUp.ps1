@@ -297,7 +297,7 @@ function Check-ForUpdates {
     }
 }
 
-# Real-Time Output Process Runner
+# Real-Time Unbuffered Output Process Runner (Supports DISM & Cleanmgr Streams)
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $FilePath
@@ -309,31 +309,36 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $pinfo
-
-    $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            Write-GuiLog $Event.SourceEventArgs.Data
-        }
-    }
-    $errEvent = Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            Write-GuiLog "ERR: $($Event.SourceEventArgs.Data)"
-        }
-    }
-
     $process.Start() | Out-Null
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
 
-    while (-not $process.HasExited) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
+    # Continuous Stream Reader loop to capture raw character output before newlines
+    $stdOut = $process.StandardOutput
+    $stdErr = $process.StandardError
+
+    $lineBuffer = ""
+
+    while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
+        if ($stdOut.Peek() -ge 0) {
+            $char = [char]$stdOut.Read()
+            if ($char -eq "`n" -or $char -eq "`r") {
+                if (-not [string]::IsNullOrWhiteSpace($lineBuffer)) {
+                    Write-GuiLog $lineBuffer.Trim()
+                    $lineBuffer = ""
+                }
+            } else {
+                $lineBuffer += $char
+            }
+        } else {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 50
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($lineBuffer)) {
+        Write-GuiLog $lineBuffer.Trim()
     }
 
     $process.WaitForExit()
-    
-    Unregister-Event -SourceIdentifier $outEvent.Name
-    Unregister-Event -SourceIdentifier $errEvent.Name
 }
 
 # Init Setup
@@ -453,7 +458,7 @@ $BtnStart.Add_Click({
     $TxtStatus.Text = "Optimizing DISM Component Store..."
     $CleanProgress.Value = 85
     Write-GuiLog "=== [5/5] RUNNING DISM COMPONENT STORE CLEANUP ==="
-    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart"
+    Run-ProcessWithLiveOutput "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
 
     # Final Calculation
     $CleanProgress.Value = 100
