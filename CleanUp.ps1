@@ -64,6 +64,27 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
         Title="Myles Mattlock CleanUp Tool" Height="820" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
+    <Window.Resources>
+        <!-- Reusable Style for Profile Buttons so disabled state maintains custom colors -->
+        <Style x:Key="ProfileButtonStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="25">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- 0: Header -->
@@ -143,23 +164,14 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="PROFILES:" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <Button x:Name="BtnProfileDefault" Content="Default" Width="80" Height="26" 
-                                Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
+                                Style="{StaticResource ProfileButtonStyle}"
+                                Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand"/>
                         <Button x:Name="BtnProfileServer" Content="Server Cleanup" Width="105" Height="26" 
-                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
+                                Style="{StaticResource ProfileButtonStyle}"
+                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand"/>
                         <Button x:Name="BtnProfileCustom" Content="Custom" Width="80" Height="26" 
-                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
+                                Style="{StaticResource ProfileButtonStyle}"
+                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
                     </StackPanel>
                 </Grid>
 
@@ -315,7 +327,7 @@ function Set-ActiveProfileButton ($Profile) {
 }
 
 function Evaluate-CurrentProfile {
-    # Ignore profile recalculations while updating or when a cleanup is running
+    # Lock execution when a cleanup task is actively running
     if ($Global:IsUpdatingProfile -or (-not $BtnStart.IsEnabled)) { return }
 
     if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) {
