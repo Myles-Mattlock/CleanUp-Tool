@@ -297,7 +297,7 @@ function Check-ForUpdates {
     }
 }
 
-# Non-Blocking Live Process Output Runner
+# Hybrid Stream Runner (Flushes Both Standard Lines & Carriage-Return Progress Updates)
 function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $FilePath
@@ -309,37 +309,34 @@ function Run-ProcessWithLiveOutput ($FilePath, $ArgumentList) {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $pinfo
-
-    $outEvent = Register-ObjectEvent -InputObject $process -EventName "OutputDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            $cleanData = $Event.SourceEventArgs.Data.Trim()
-            if (-not [string]::IsNullOrWhiteSpace($cleanData)) {
-                Write-GuiLog $cleanData
-            }
-        }
-    }
-    $errEvent = Register-ObjectEvent -InputObject $process -EventName "ErrorDataReceived" -Action {
-        if ($Event.SourceEventArgs.Data) {
-            $cleanData = $Event.SourceEventArgs.Data.Trim()
-            if (-not [string]::IsNullOrWhiteSpace($cleanData)) {
-                Write-GuiLog "ERR: $cleanData"
-            }
-        }
-    }
-
     $process.Start() | Out-Null
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
 
-    while (-not $process.HasExited) {
+    $stdOut = $process.StandardOutput
+    $lineBuffer = ""
+
+    while (-not $process.HasExited -or -not $stdOut.EndOfStream) {
+        if ($stdOut.Peek() -ge 0) {
+            $char = [char]$stdOut.Read()
+            if ($char -eq "`n" -or $char -eq "`r") {
+                $cleanText = $lineBuffer.Trim()
+                if (-not [string]::IsNullOrWhiteSpace($cleanText)) {
+                    Write-GuiLog $cleanText
+                }
+                $lineBuffer = ""
+            } else {
+                $lineBuffer += $char
+            }
+        } else {
+            Start-Sleep -Milliseconds 20
+        }
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($lineBuffer)) {
+        Write-GuiLog $lineBuffer.Trim()
     }
 
     $process.WaitForExit()
-    
-    Unregister-Event -SourceIdentifier $outEvent.Name -ErrorAction SilentlyContinue
-    Unregister-Event -SourceIdentifier $errEvent.Name -ErrorAction SilentlyContinue
 }
 
 # Init Setup
