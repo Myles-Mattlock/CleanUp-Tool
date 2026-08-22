@@ -38,7 +38,7 @@ jobs:
         pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '3.0.0'"
         
         # Copy assets
-        Copy-Item "SystemCleanUp\*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
+        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests
