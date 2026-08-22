@@ -65,7 +65,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
-        <!-- Reusable Style for Profile Buttons so disabled state maintains custom colors -->
+        <!-- Reusable Style for Profile Buttons with Hover and Disabled States -->
         <Style x:Key="ProfileButtonStyle" TargetType="Button">
             <Setter Property="Template">
                 <Setter.Value>
@@ -74,6 +74,26 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!-- Hover Trigger for Active Profile (Blue) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsEnabled" Value="True"/>
+                                    <Condition Property="Background" Value="#007ACC"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#0098FF"/>
+                            </MultiTrigger>
+                            <!-- Hover Trigger for Inactive Profile (Dark Grey) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsEnabled" Value="True"/>
+                                    <Condition Property="Background" Value="#2D2D30"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#3E3E42"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </MultiTrigger>
+                            <!-- Disabled Trigger during Cleanup -->
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}"/>
                                 <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
