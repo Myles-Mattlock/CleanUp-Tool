@@ -344,6 +344,34 @@ function Write-GuiLog ($Message) {
     $LogScroll.ScrollToEnd()
 }
 
+# Background Drive Diagnostic Worker Function
+function Request-AsyncDriveStats ($Queue) {
+    $Script = {
+        param($Q)
+        $HealthText = "Healthy"; $TempText = "N/A"
+        try {
+            Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($TempText -eq "N/A") {
+                    $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $_.Index -ErrorAction SilentlyContinue
+                    if ($PhysDisk) {
+                        $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                        if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
+                        if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
+                    }
+                }
+            }
+        } catch {}
+        $Q.Enqueue(@{ Type = "Stats"; Health = $HealthText; Temp = $TempText })
+    }
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript($Script)
+    [void]$ps.AddArgument($Queue)
+    [void]$ps.BeginInvoke()
+}
+
 $Window.Add_Loaded({
     # Instant DWM Window Frame Coloring
     try {
@@ -373,14 +401,14 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # GLOBAL INITIALIZATION QUEUE (Fixes null-valued expression error in Timer context)
+    # GLOBAL INITIALIZATION QUEUE
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 
     # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Diagnostics & Updates)
     $InitScript = {
         param($RepoName, $CurrentVersion, $InitQueue)
 
-        # 1. SMART Hardware Check
+        # 1. Initial SMART Hardware Check
         $HealthText = "Healthy"; $TempText = "N/A"
         try {
             Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
@@ -440,6 +468,24 @@ $Window.Add_Loaded({
         }
     })
     $InitTimer.Start()
+
+    # --- RECURRING 30-SECOND HARDWARE MONITOR TIMER ---
+    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
+    $MonitorTimer.Add_Tick({
+        # Check and process any returning queue data
+        $mItem = $null
+        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
+            if ($mItem.Type -eq "Stats") {
+                $TxtDriveHealth.Text = $mItem.Health
+                $TxtDriveTemp.Text   = $mItem.Temp
+            }
+        }
+        # Fire off non-blocking async background scan
+        Request-AsyncDriveStats -Queue $Global:MonitorQueue
+    })
+    $MonitorTimer.Start()
 })
 
 # Async Execution Worker
