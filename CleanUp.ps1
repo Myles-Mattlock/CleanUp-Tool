@@ -370,46 +370,76 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Robust Async Diagnostics Worker
+# Direct Low-Level WMI Diagnostics (Guarantees Health % and Temp for NVMe / SATA)
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
         $Results = @()
         try {
-            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-            foreach ($Disk in $Disks) {
+            # Query MSFT_StorageReliabilityCounter directly via CIM
+            $ReliabilityData = @{}
+            try {
+                Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $ReliabilityData[$_.DeviceId] = $_
+                }
+            } catch {}
+
+            # Query SmartData for legacy SATA drives directly via WMI
+            $SmartTemps = @{}
+            try {
+                Get-CimInstance -Namespace "root\wmi" -ClassName "MSStorageDriver_FailurePredictData" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $VendorData = $_.VendorSpecific
+                    if ($VendorData -and $VendorData.Length -ge 200) {
+                        # Attribute ID 194 (0xC2) or 190 (0xBE) contains temperature in byte offset + 5
+                        for ($i = 2; $i -lt ($VendorData.Length - 12); $i += 12) {
+                            $AttrId = $VendorData[$i]
+                            if ($AttrId -eq 194 -or $AttrId -eq 190) {
+                                $TempRaw = $VendorData[$i + 5]
+                                if ($TempRaw -gt 0 -and $TempRaw -lt 100) {
+                                    $SmartTemps[$_.InstanceName] = $TempRaw
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {}
+
+            # Process Physical Disks via CIM
+            $PhysicalDisks = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
+            foreach ($Disk in $PhysicalDisks) {
                 $TempStr = "N/A"
                 $HealthStr = "100% Health"
 
-                # Query Reliability Counter
-                $Rel = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                if ($Rel) {
+                # Check Reliability Counter
+                if ($ReliabilityData.ContainsKey($Disk.DeviceId)) {
+                    $Rel = $ReliabilityData[$Disk.DeviceId]
                     if ($Rel.Temperature -gt 0) { $TempStr = "$($Rel.Temperature) °C" }
                     if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
                 }
 
-                # Fallback: Storage Health Report
-                if ($TempStr -eq "N/A" -or $HealthStr -eq "100% Health") {
-                    try {
-                        $Report = $Disk | Get-StorageHealthReport -ErrorAction SilentlyContinue
-                        if ($Report) {
-                            $TempMetric = $Report.HealthReport | Where-Object { $_.Name -like "*Temperature*" }
-                            if ($TempMetric -and $TempMetric.Value -gt 0) { $TempStr = "$($TempMetric.Value) °C" }
-                            
-                            $WearMetric = $Report.HealthReport | Where-Object { $_.Name -like "*Wear*" -or $_.Name -like "*Percentage Used*" }
-                            if ($WearMetric) { $HealthStr = "$(100 - $WearMetric.Value)% Health" }
+                # Fallback to SMART Vendor Temperature if reliability counter didn't return temp
+                if ($TempStr -eq "N/A" -and $SmartTemps.Count -gt 0) {
+                    foreach ($InstName in $SmartTemps.Keys) {
+                        if ($InstName -like "*$($Disk.DeviceId)*" -or $InstName -like "*$($Disk.Model)*") {
+                            $TempStr = "$($SmartTemps[$InstName]) °C"
+                            break
                         }
-                    } catch {}
+                    }
                 }
 
-                # Map Physical Disks to Volumes
-                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                # Map Physical Disks to Drive Letters via Win32 WMI classes
+                $DiskIndex = $Disk.DeviceId
+                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
-                    if ($Part.DriveLetter) {
-                        $Results += @{
-                            DriveLetter = "$($Part.DriveLetter):"
-                            Health = $HealthStr
-                            Temp   = $TempStr
+                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
+                    foreach ($LogDisk in $LogicalDisks) {
+                        if ($LogDisk.DeviceID) {
+                            $Results += @{
+                                DriveLetter = "$($LogDisk.DeviceID)"
+                                Health      = $HealthStr
+                                Temp        = $TempStr
+                            }
                         }
                     }
                 }
