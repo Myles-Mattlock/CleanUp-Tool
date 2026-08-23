@@ -335,7 +335,6 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
         }
     }
 
-    # Helper function to generate cards
     function Create-Card ($Title, $ValText, $FgHex, $ColIdx) {
         $Border = New-Object System.Windows.Controls.Border
         $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
@@ -389,7 +388,7 @@ function Request-AsyncDriveStats ($Queue) {
                     if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
                 }
 
-                # Fallback: Storage Health Report (Works for NVMe/SATA where reliability counter fails)
+                # Fallback: Storage Health Report
                 if ($TempStr -eq "N/A" -or $HealthStr -eq "100% Health") {
                     try {
                         $Report = $Disk | Get-StorageHealthReport -ErrorAction SilentlyContinue
