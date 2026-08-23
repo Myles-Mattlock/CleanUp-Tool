@@ -245,6 +245,13 @@ $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $Global:IsUpdatingProfile = $false
 $Global:DriveUIMap = @{}
 
+# --- GLOBAL FUNCTIONS (Declared early so all listeners can resolve them) ---
+function Write-GuiLog ($Message) {
+    if ([string]::IsNullOrWhiteSpace($Message)) { return }
+    $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
+    $LogScroll.ScrollToEnd()
+}
+
 function Save-LogAndMaintainHistory {
     try {
         if (-not (Test-Path $Global:LogDir)) { New-Item -Path $Global:LogDir -ItemType Directory -Force | Out-Null }
@@ -278,48 +285,6 @@ function Invoke-CurrentProfileEvaluation {
     else { Set-ActiveProfileButton "Custom" }
 }
 
-# Attach Hover & Checkbox Events
-@($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom) | ForEach-Object {
-    $_.Add_MouseEnter({
-        if (-not $BtnStart.IsEnabled) { return }
-        $this.Background = if ($this.Background.ToString() -eq $BrushActiveBG.ToString()) { $BrushActiveHover } else { $BrushInactiveHvr }
-        if ($this.Background.ToString() -ne $BrushActiveHover.ToString()) { $this.Foreground = $BrushActiveFG }
-    })
-    $_.Add_MouseLeave({ if ($BtnStart.IsEnabled) { Invoke-CurrentProfileEvaluation } })
-}
-
-$TaskCheckboxes | ForEach-Object {
-    $_.Add_Checked({ Invoke-CurrentProfileEvaluation })
-    $_.Add_Unchecked({ Invoke-CurrentProfileEvaluation })
-}
-
-# Profile Clicks
-$BtnProfileDefault.Add_Click({
-    if (-not $BtnStart.IsEnabled) { return }
-    $Global:IsUpdatingProfile = $true
-    $TaskCheckboxes | ForEach-Object { $_.IsChecked = $true }
-    Set-ActiveProfileButton "Default"
-    $Global:IsUpdatingProfile = $false
-})
-
-$BtnProfileServer.Add_Click({
-    if (-not $BtnStart.IsEnabled) { return }
-    $Global:IsUpdatingProfile = $true
-    $ChkTempFiles.IsChecked = $ChkRecycleBin.IsChecked = $ChkCleanmgr.IsChecked = $true
-    $ChkFlushDNS.IsChecked  = $ChkDism.IsChecked = $false
-    Set-ActiveProfileButton "Server"
-    $Global:IsUpdatingProfile = $false
-})
-
-$BtnProfileCustom.Add_Click({ if ($BtnStart.IsEnabled) { Set-ActiveProfileButton "Custom" } })
-
-function Write-GuiLog ($Message) {
-    if ([string]::IsNullOrWhiteSpace($Message)) { return }
-    $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
-    $LogScroll.ScrollToEnd()
-}
-
-# Helper to construct WPF Drive Rows
 function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Grid = New-Object System.Windows.Controls.Grid
     $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
@@ -370,52 +335,77 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Asynchronous Multi-Drive Health & Temperature Worker
-function Request-AsyncDriveStats ($Queue) {
-    $Script = {
-        param($Q)
-        $Results = @()
-        try {
-            $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-            foreach ($Disk in $PhysicalDisks) {
-                $TempStr = "N/A"
-                $HealthStr = "Healthy"
+function Update-DriveHealthAndTemp {
+    try {
+        $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+        foreach ($Disk in $PhysicalDisks) {
+            $TempStr = "N/A"
+            $HealthStr = "Healthy"
 
+            try {
+                $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                if ($Counter) {
+                    if ($Counter.Temperature -gt 0) { $TempStr = "$($Counter.Temperature) °C" }
+                    if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
+                }
+            } catch {}
+
+            # SMART Fallback for secondary drives where StorageReliabilityCounter returns null
+            if ($TempStr -eq "N/A") {
                 try {
-                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter) {
-                        $RawT = $Counter.Temperature
-                        if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
-                        if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
-                        if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
-                    }
+                    $WmiTemp = Get-CimInstance -Namespace "root\wmi" -ClassName "MSFT_PhysicalDiskData" -ErrorAction SilentlyContinue | Where-Object { $_.DeviceId -eq $Disk.DeviceId }
+                    if ($WmiTemp -and $WmiTemp.Temperature -gt 0) { $TempStr = "$($WmiTemp.Temperature) °C" }
                 } catch {}
+            }
 
-                # Map Physical Disk Number to Volume Letters via Partitions
-                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
-                foreach ($Part in $Partitions) {
-                    if ($Part.DriveLetter) {
-                        $Results += @{
-                            DriveLetter = "$($Part.DriveLetter):"
-                            Health      = $HealthStr
-                            Temp        = $TempStr
-                        }
+            $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+            foreach ($Part in $Partitions) {
+                if ($Part.DriveLetter) {
+                    $Key = "$($Part.DriveLetter):"
+                    if ($Global:DriveUIMap.ContainsKey($Key)) {
+                        $Global:DriveUIMap[$Key].Health.Text = $HealthStr
+                        $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
                     }
                 }
             }
-        } catch {}
-
-        $Q.Enqueue(@{ Type = "Stats"; Data = $Results })
-    }
-
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
-    $ps = [powershell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript($Script)
-    [void]$ps.AddArgument($Queue)
-    [void]$ps.BeginInvoke()
+        }
+    } catch {}
 }
+
+# Attach Hover & Checkbox Events
+@($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom) | ForEach-Object {
+    $_.Add_MouseEnter({
+        if (-not $BtnStart.IsEnabled) { return }
+        $this.Background = if ($this.Background.ToString() -eq $BrushActiveBG.ToString()) { $BrushActiveHover } else { $BrushInactiveHvr }
+        if ($this.Background.ToString() -ne $BrushActiveHover.ToString()) { $this.Foreground = $BrushActiveFG }
+    })
+    $_.Add_MouseLeave({ if ($BtnStart.IsEnabled) { Invoke-CurrentProfileEvaluation } })
+}
+
+$TaskCheckboxes | ForEach-Object {
+    $_.Add_Checked({ Invoke-CurrentProfileEvaluation })
+    $_.Add_Unchecked({ Invoke-CurrentProfileEvaluation })
+}
+
+# Profile Clicks
+$BtnProfileDefault.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
+    $Global:IsUpdatingProfile = $true
+    $TaskCheckboxes | ForEach-Object { $_.IsChecked = $true }
+    Set-ActiveProfileButton "Default"
+    $Global:IsUpdatingProfile = $false
+})
+
+$BtnProfileServer.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
+    $Global:IsUpdatingProfile = $true
+    $ChkTempFiles.IsChecked = $ChkRecycleBin.IsChecked = $ChkCleanmgr.IsChecked = $true
+    $ChkFlushDNS.IsChecked  = $ChkDism.IsChecked = $false
+    Set-ActiveProfileButton "Server"
+    $Global:IsUpdatingProfile = $false
+})
+
+$BtnProfileCustom.Add_Click({ if ($BtnStart.IsEnabled) { Set-ActiveProfileButton "Custom" } })
 
 $Window.Add_Loaded({
     # Instant DWM Window Frame Coloring
@@ -448,9 +438,11 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # GLOBAL INITIALIZATION & MONITOR QUEUES
+    # Immediate update for health/temp
+    Update-DriveHealthAndTemp
+
+    # GLOBAL INITIALIZATION QUEUE
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
-    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 
     # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Log & Version Check)
     $InitScript = {
@@ -503,27 +495,11 @@ $Window.Add_Loaded({
     })
     $InitTimer.Start()
 
-    # Recurring 30-second monitor update
+    # Recurring 30-second monitor timer
     $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
     $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
-    $MonitorTimer.Add_Tick({
-        $mItem = $null
-        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
-            if ($mItem.Type -eq "Stats") {
-                foreach ($Stat in $mItem.Data) {
-                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
-                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
-                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
-                    }
-                }
-            }
-        }
-        Request-AsyncDriveStats -Queue $Global:MonitorQueue
-    })
+    $MonitorTimer.Add_Tick({ Update-DriveHealthAndTemp })
     $MonitorTimer.Start()
-
-    # Initial async fetch trigger
-    Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
 # Async Execution Worker
