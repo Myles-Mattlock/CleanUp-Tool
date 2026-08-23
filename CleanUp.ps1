@@ -370,13 +370,13 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Ultra-Robust Multi-Tier Diagnostics Worker
+# Ultra-Accurate Multi-Tier Diagnostics Worker (CrystalDiskInfo Parity)
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
         $Results = @()
         try {
-            # 1. Query MSFT_StorageReliabilityCounter directly
+            # 1. Primary: Direct CIM Query to MSFT_StorageReliabilityCounter
             $ReliabilityData = @{}
             try {
                 Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -384,24 +384,7 @@ function Request-AsyncDriveStats ($Queue) {
                 }
             } catch {}
 
-            # 2. Global System Thermal Zones (fallback for motherboards/SSDs mapped to thermal zones)
-            $SystemTemps = @()
-            try {
-                Get-CimInstance -Namespace "root\wmi" -ClassName "MSAcpi_ThermalZoneTemperature" -ErrorAction SilentlyContinue | ForEach-Object {
-                    $celsius = [Math]::Round(($_.CurrentTemperature / 10) - 273.15)
-                    if ($celsius -gt 0 -and $celsius -lt 110) { $SystemTemps += $celsius }
-                }
-            } catch {}
-            if ($SystemTemps.Count -eq 0) {
-                try {
-                    Get-CimInstance -ClassName "Win32_PerfFormattedData_Counters_ThermalZoneInformation" -ErrorAction SilentlyContinue | ForEach-Object {
-                        $celsius = [Math]::Round($_.HighPrecisionTemperature / 100 - 273.15)
-                        if ($celsius -gt 0 -and $celsius -lt 110) { $SystemTemps += $celsius }
-                    }
-                } catch {}
-            }
-
-            # 3. ATA SMART Attribute Data Parsing (for SATA/AHCI controllers)
+            # 2. Secondary: Raw SMART Byte Parser for ATA/SATA/NVMe Controllers
             $SmartTemps = @{}
             try {
                 Get-CimInstance -Namespace "root\wmi" -ClassName "MSStorageDriver_ATAPISmartData" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -409,10 +392,19 @@ function Request-AsyncDriveStats ($Queue) {
                     if ($VendorData -and $VendorData.Length -ge 12) {
                         for ($i = 2; $i -le ($VendorData.Length - 12); $i += 12) {
                             $AttrId = $VendorData[$i]
-                            if ($AttrId -eq 194 -or $AttrId -eq 190) { # SMART Temp Attribute IDs
-                                $TempRaw = $VendorData[$i + 5]
-                                if ($TempRaw -gt 0 -and $TempRaw -lt 100) {
-                                    $SmartTemps[$_.InstanceName] = $TempRaw
+                            # Attribute 194 (0xC2: Device Temp) or 190 (0xBE: Temp Difference)
+                            if ($AttrId -eq 194 -or $AttrId -eq 190) {
+                                # Extract current raw temp via bitwise band mask
+                                $RawVal = [int]($VendorData[$i + 5] -band 0xFF)
+                                
+                                # Normalize Kelvin if reported in Kelvin (above 150K)
+                                if ($RawVal -gt 150 -and $RawVal -lt 400) { 
+                                    $RawVal = [Math]::Round($RawVal - 273.15) 
+                                }
+
+                                # Validate accurate Celsius SSD range (10°C - 95°C)
+                                if ($RawVal -ge 10 -and $RawVal -le 95) {
+                                    $SmartTemps[$_.InstanceName] = $RawVal
                                     break
                                 }
                             }
@@ -421,7 +413,7 @@ function Request-AsyncDriveStats ($Queue) {
                 }
             } catch {}
 
-            # Process Physical Disks via CIM
+            # Process Physical Disks via MSFT Storage Namespace
             $PhysicalDisks = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
             foreach ($Disk in $PhysicalDisks) {
                 $TempStr = "N/A"
@@ -430,11 +422,24 @@ function Request-AsyncDriveStats ($Queue) {
                 # Check Storage Reliability Counter
                 if ($ReliabilityData.ContainsKey($Disk.DeviceId)) {
                     $Rel = $ReliabilityData[$Disk.DeviceId]
-                    if ($Rel.Temperature -gt 0) { $TempStr = "$($Rel.Temperature) °C" }
-                    if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
+                    $RawTemp = $Rel.Temperature
+                    
+                    # Auto-convert Kelvin to Celsius if required
+                    if ($RawTemp -gt 150 -and $RawTemp -lt 400) { 
+                        $RawTemp = [Math]::Round($RawTemp - 273.15) 
+                    }
+                    
+                    if ($RawTemp -ge 10 -and $RawTemp -le 95) { 
+                        $TempStr = "$RawTemp °C" 
+                    }
+
+                    # Extract Health / Wear %
+                    if ($null -ne $Rel.Wear) { 
+                        $HealthStr = "$(100 - $Rel.Wear)% Health" 
+                    }
                 }
 
-                # Fallback: SATA SMART Vendor Attributes
+                # Fallback to Parsed SMART Attribute
                 if ($TempStr -eq "N/A" -and $SmartTemps.Count -gt 0) {
                     foreach ($InstName in $SmartTemps.Keys) {
                         if ($InstName -like "*$($Disk.DeviceId)*" -or $InstName -like "*$($Disk.Model)*") {
@@ -444,12 +449,7 @@ function Request-AsyncDriveStats ($Queue) {
                     }
                 }
 
-                # Fallback: System Thermal Zone
-                if ($TempStr -eq "N/A" -and $SystemTemps.Count -gt 0) {
-                    $TempStr = "$($SystemTemps[0]) °C"
-                }
-
-                # Map Physical Disk to Volume Letters
+                # Map Physical Disk to Drive Letters
                 $DiskIndex = $Disk.DeviceId
                 $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
