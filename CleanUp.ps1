@@ -399,6 +399,7 @@ $BtnStart.Add_Click({
     }
 
     $BtnStart.IsEnabled = $false; $BtnStart.Content = "Cleaning..."
+    $CleanProgress.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
     $CleanProgress.Value = 0; $TxtProgressPercent.Text = "0%"
     $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
 
@@ -452,11 +453,20 @@ $BtnStart.Add_Click({
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Recycle bin emptied."
         }
 
-        # 3. Disk Cleanup Utility (Strict Original Logic)
+        # 3. Disk Cleanup Utility (Strict Original Logic + Registry Flag Enforcer for Windows.old)
         if ($SelectedTasks.DoCleanmgr) {
             $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $StartPercent "Running Disk Cleanup Utility..."
             Send-Log "=== RUNNING CLEANMGR UTILITY ==="
+
+            # Direct Registry Enforcer: Ensures cleanmgr is flagged to purge Previous Installations (Windows.old)
+            $VolCaches = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+            $OldWinKey = Join-Path $VolCaches "Previous Installations"
+            if (Test-Path $OldWinKey) {
+                Set-ItemProperty -Path $OldWinKey -Name "StateFlags0001" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $OldWinKey -Name "StateFlags0002" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+            }
+
             $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
             Invoke-SilentProcess "cleanmgr.exe" $CleanParam
             $CompletedTasks++
@@ -516,6 +526,7 @@ $BtnStart.Add_Click({
 
             $TxtReclaimed.Text = $ReadableSpace
             $BtnStart.IsEnabled = $true; $BtnStart.Content = "Finished"
+            $CleanProgress.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00FF66")
             $InteractiveControls | ForEach-Object { $_.IsEnabled = $true }
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
