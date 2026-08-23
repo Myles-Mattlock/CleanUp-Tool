@@ -389,6 +389,12 @@ $Window.Add_Loaded({
 
 # Async Execution Worker
 $BtnStart.Add_Click({
+    # If the cleanup session has already finished, clicking the button closes the application
+    if ($BtnStart.Content -eq "Finished") {
+        $Window.Close()
+        return
+    }
+
     $SelectedTasks = @{
         DoTemp = $ChkTempFiles.IsChecked; DoRecycle = $ChkRecycleBin.IsChecked
         DoCleanmgr = $ChkCleanmgr.IsChecked; DoFlushDNS = $ChkFlushDNS.IsChecked; DoDism = $ChkDism.IsChecked
