@@ -344,49 +344,15 @@ function Write-GuiLog ($Message) {
     $LogScroll.ScrollToEnd()
 }
 
-# Diagnostics & Updates
-function Get-DriveHealthDiagnostics {
-    Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
-    $TxtDriveHealth.Text = "Healthy"
-    $TempStatusText = "N/A"
-    try {
-        Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-GuiLog "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)"
-            if ($TempStatusText -eq "N/A") {
-                $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $_.Index -ErrorAction SilentlyContinue
-                if ($PhysDisk) {
-                    $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter.Temperature -gt 0) { $TempStatusText = "$($Counter.Temperature) °C" }
-                    if ($null -ne $Counter.Wear) { $TxtDriveHealth.Text = "$(100 - $Counter.Wear)% Health" }
-                }
-            }
-        }
-    } catch { $TxtDriveHealth.Text = "Healthy" }
-    $TxtDriveTemp.Text = $TempStatusText
-}
-
-function Test-ForUpdates {
-    Write-GuiLog "Checking for updates..."
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $Releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Global:RepoName/releases" -Method Get -UserAgent "Mozilla/5.0 PowerShell-App" -ErrorAction Stop
-        $LocalVersion = [version]($Global:CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
-        foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
-            if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
-                Write-GuiLog "[!] UPDATE AVAILABLE: $($Rel.tag_name)"; break
-            }
-        }
-        Write-GuiLog "Running stable version (v$Global:CurrentVersion)."
-    } catch { Write-GuiLog "Note: Update check skipped." }
-}
-
 $Window.Add_Loaded({
+    # Instant DWM Window Frame Coloring
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         $DarkTealColor = 0x00382D12 
         [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, 35, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
 
+    # Image Load
     @("Logo.jpg", "LogoRight.jpg") | ForEach-Object {
         $Path = Join-Path $CurrentDir $_
         if (Test-Path $Path) {
@@ -397,12 +363,81 @@ $Window.Add_Loaded({
     }
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
-    $Global:StartingFreeSpace = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'").FreeSpace
-    $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
     
+    # Fast Instant .NET Free-Space Check
+    $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
+    if ($DriveC) {
+        $Global:StartingFreeSpace = $DriveC.AvailableFreeSpace
+        $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
+    }
+
     Write-GuiLog "System Cleanup Initialized."
-    Get-DriveHealthDiagnostics
-    Test-ForUpdates
+
+    # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Diagnostics & Updates)
+    $InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $InitScript = {
+        param($RepoName, $CurrentVersion, $InitQueue)
+
+        # 1. SMART Hardware Check
+        $HealthText = "Healthy"; $TempText = "N/A"
+        try {
+            Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
+                $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)" })
+                if ($TempText -eq "N/A") {
+                    $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $_.Index -ErrorAction SilentlyContinue
+                    if ($PhysDisk) {
+                        $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                        if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
+                        if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
+                    }
+                }
+            }
+        } catch {}
+        $InitQueue.Enqueue(@{ Type = "Stats"; Health = $HealthText; Temp = $TempText })
+
+        # 2. Check Updates
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $Releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoName/releases" -Method Get -UserAgent "Mozilla/5.0 PowerShell-App" -ErrorAction Stop
+            $LocalVersion = [version]($CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
+            $HasUpdate = $false
+            foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
+                if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
+                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "[!] UPDATE AVAILABLE: $($Rel.tag_name)" })
+                    $HasUpdate = $true; break
+                }
+            }
+            if (-not $HasUpdate) { $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Running stable version (v$CurrentVersion)." }) }
+        } catch { $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Note: Update check skipped." }) }
+    }
+
+    $InitRunspace = [runspacefactory]::CreateRunspace()
+    $InitRunspace.Open()
+    $InitPS = [powershell]::Create()
+    $InitPS.Runspace = $InitRunspace
+    [void]$InitPS.AddScript($InitScript)
+    [void]$InitPS.AddArgument($Global:RepoName)
+    [void]$InitPS.AddArgument($Global:CurrentVersion)
+    [void]$InitPS.AddArgument($InitQueue)
+    $InitAsync = $InitPS.BeginInvoke()
+
+    $InitTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $InitTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $InitTimer.Add_Tick({
+        $item = $null
+        while ($InitQueue.TryDequeue([ref]$item)) {
+            if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
+            elseif ($item.Type -eq "Stats") {
+                $TxtDriveHealth.Text = $item.Health
+                $TxtDriveTemp.Text   = $item.Temp
+            }
+        }
+        if ($InitAsync.IsCompleted) {
+            $this.Stop()
+            try { $InitPS.Dispose(); $InitRunspace.Dispose() } catch {}
+        }
+    })
+    $InitTimer.Start()
 })
 
 # Async Execution Worker
@@ -544,7 +579,9 @@ $BtnStart.Add_Click({
             $this.Stop()
             try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
 
-            $SpaceSavedBytes = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'").FreeSpace - $Global:StartingFreeSpace
+            $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
+            $EndFreeSpace = $DriveC.AvailableFreeSpace
+            $SpaceSavedBytes = $EndFreeSpace - $Global:StartingFreeSpace
             $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
             $TxtReclaimed.Text = $ReadableSpace
