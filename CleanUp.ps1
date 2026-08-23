@@ -360,7 +360,7 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
 
     $CardSpace  = Create-Card "DRIVE ($DriveLetter) INITIAL FREE" $InitialFreeText "#FFFFFF" 0
     $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Checking..." "#00E5FF" 2
-    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "-- °C" "#FFCC00" 4
+    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "Checking..." "#FFCC00" 4
 
     [void]$Grid.Children.Add($CardSpace.Border)
     [void]$Grid.Children.Add($CardHealth.Border)
@@ -370,13 +370,13 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Direct Low-Level WMI Diagnostics (Guarantees Health % and Temp for NVMe / SATA)
+# Ultra-Robust Multi-Tier Diagnostics Worker
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
         $Results = @()
         try {
-            # Query MSFT_StorageReliabilityCounter directly via CIM
+            # 1. Query MSFT_StorageReliabilityCounter directly
             $ReliabilityData = @{}
             try {
                 Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -384,16 +384,32 @@ function Request-AsyncDriveStats ($Queue) {
                 }
             } catch {}
 
-            # Query SmartData for legacy SATA drives directly via WMI
+            # 2. Global System Thermal Zones (fallback for motherboards/SSDs mapped to thermal zones)
+            $SystemTemps = @()
+            try {
+                Get-CimInstance -Namespace "root\wmi" -ClassName "MSAcpi_ThermalZoneTemperature" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $celsius = [Math]::Round(($_.CurrentTemperature / 10) - 273.15)
+                    if ($celsius -gt 0 -and $celsius -lt 110) { $SystemTemps += $celsius }
+                }
+            } catch {}
+            if ($SystemTemps.Count -eq 0) {
+                try {
+                    Get-CimInstance -ClassName "Win32_PerfFormattedData_Counters_ThermalZoneInformation" -ErrorAction SilentlyContinue | ForEach-Object {
+                        $celsius = [Math]::Round($_.HighPrecisionTemperature / 100 - 273.15)
+                        if ($celsius -gt 0 -and $celsius -lt 110) { $SystemTemps += $celsius }
+                    }
+                } catch {}
+            }
+
+            # 3. ATA SMART Attribute Data Parsing (for SATA/AHCI controllers)
             $SmartTemps = @{}
             try {
-                Get-CimInstance -Namespace "root\wmi" -ClassName "MSStorageDriver_FailurePredictData" -ErrorAction SilentlyContinue | ForEach-Object {
+                Get-CimInstance -Namespace "root\wmi" -ClassName "MSStorageDriver_ATAPISmartData" -ErrorAction SilentlyContinue | ForEach-Object {
                     $VendorData = $_.VendorSpecific
-                    if ($VendorData -and $VendorData.Length -ge 200) {
-                        # Attribute ID 194 (0xC2) or 190 (0xBE) contains temperature in byte offset + 5
-                        for ($i = 2; $i -lt ($VendorData.Length - 12); $i += 12) {
+                    if ($VendorData -and $VendorData.Length -ge 12) {
+                        for ($i = 2; $i -le ($VendorData.Length - 12); $i += 12) {
                             $AttrId = $VendorData[$i]
-                            if ($AttrId -eq 194 -or $AttrId -eq 190) {
+                            if ($AttrId -eq 194 -or $AttrId -eq 190) { # SMART Temp Attribute IDs
                                 $TempRaw = $VendorData[$i + 5]
                                 if ($TempRaw -gt 0 -and $TempRaw -lt 100) {
                                     $SmartTemps[$_.InstanceName] = $TempRaw
@@ -411,14 +427,14 @@ function Request-AsyncDriveStats ($Queue) {
                 $TempStr = "N/A"
                 $HealthStr = "100% Health"
 
-                # Check Reliability Counter
+                # Check Storage Reliability Counter
                 if ($ReliabilityData.ContainsKey($Disk.DeviceId)) {
                     $Rel = $ReliabilityData[$Disk.DeviceId]
                     if ($Rel.Temperature -gt 0) { $TempStr = "$($Rel.Temperature) °C" }
                     if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
                 }
 
-                # Fallback to SMART Vendor Temperature if reliability counter didn't return temp
+                # Fallback: SATA SMART Vendor Attributes
                 if ($TempStr -eq "N/A" -and $SmartTemps.Count -gt 0) {
                     foreach ($InstName in $SmartTemps.Keys) {
                         if ($InstName -like "*$($Disk.DeviceId)*" -or $InstName -like "*$($Disk.Model)*") {
@@ -428,7 +444,12 @@ function Request-AsyncDriveStats ($Queue) {
                     }
                 }
 
-                # Map Physical Disks to Drive Letters via Win32 WMI classes
+                # Fallback: System Thermal Zone
+                if ($TempStr -eq "N/A" -and $SystemTemps.Count -gt 0) {
+                    $TempStr = "$($SystemTemps[0]) °C"
+                }
+
+                # Map Physical Disk to Volume Letters
                 $DiskIndex = $Disk.DeviceId
                 $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
@@ -489,8 +510,9 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # GLOBAL INITIALIZATION QUEUE
+    # GLOBAL MONITOR & INIT QUEUES
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 
     # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Diagnostics & Updates)
     $InitScript = {
@@ -544,7 +566,6 @@ $Window.Add_Loaded({
     $InitTimer.Start()
 
     # --- RECURRING 30-SECOND HARDWARE MONITOR TIMER ---
-    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
     $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
     $MonitorTimer.Add_Tick({
@@ -563,7 +584,24 @@ $Window.Add_Loaded({
     })
     $MonitorTimer.Start()
 
-    # Trigger first diagnostic query immediately
+    # Dispatch immediate startup hardware scan (~1 second load time)
+    $FastInitTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $FastInitTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $FastInitTimer.Add_Tick({
+        $mItem = $null
+        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
+            if ($mItem.Type -eq "Stats") {
+                foreach ($Stat in $mItem.Data) {
+                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
+                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
+                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
+                    }
+                }
+                $this.Stop()
+            }
+        }
+    })
+    $FastInitTimer.Start()
     Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
