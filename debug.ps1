@@ -1,50 +1,55 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    STORAGE TELEMETRY DEBUG TEST" -ForegroundColor Cyan
+Write-Host "    STORAGE TELEMETRY DEBUG TEST - PART 2" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-# METHOD 1: StorageReliabilityCounter (Standard Windows Storage API)
-Write-Host "`n--- METHOD 1: Get-StorageReliabilityCounter ---" -ForegroundColor Yellow
+# METHOD: Map Physical Disk -> Drive Letter -> Health & Temp
 $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+
 foreach ($Disk in $PhysicalDisks) {
-    Write-Host "`nDisk Index $($Disk.DeviceId) - $($Disk.FriendlyName):" -ForegroundColor Green
-    Write-Host "  HealthStatus (WMI): $($Disk.HealthStatus)"
-    Write-Host "  OperationalStatus:  $($Disk.OperationalStatus)"
-    
+    Write-Host "`n--------------------------------------------------" -ForegroundColor Gray
+    Write-Host "Physical Disk Index $($Disk.DeviceId) - $($Disk.FriendlyName)" -ForegroundColor Green
+
+    # 1. Health Math Fix (Wear = 0 means 100% Health)
+    $HealthText = "Healthy"
+    $TempText   = "N/A"
+
     try {
         $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
         if ($Counter) {
-            Write-Host "  [Reliability Counter Found]" -ForegroundColor Gray
-            Write-Host "  - Raw Temperature:  $($Counter.Temperature)"
-            Write-Host "  - Wear Percentage:  $($Counter.Wear)"
-            Write-Host "  - Read Errors Total:$($Counter.ReadErrorsTotal)"
-        } else {
-            Write-Host "  [!] StorageReliabilityCounter returned NULL" -ForegroundColor Red
+            # Temp Check
+            if ($Counter.Temperature -gt 0) {
+                $TempText = "$($Counter.Temperature) °C"
+            }
+
+            # Wear / Health Math Check
+            if ($null -ne $Counter.Wear -and $Counter.Wear -ne "") {
+                $HealthValue = 100 - [int]$Counter.Wear
+                $HealthText  = "$HealthValue% Health"
+            }
         }
     } catch {
-        Write-Host "  [!] Exception reading Reliability Counter: $_" -ForegroundColor Red
+        Write-Host "  Error reading reliability counter: $_" -ForegroundColor Red
     }
-}
 
-# METHOD 2: Direct WMI MSFT_PhysicalDisk & StorageReliabilityCounter Class Queries
-Write-Host "`n--- METHOD 2: Direct CIM/WMI Class Queries ---" -ForegroundColor Yellow
-try {
-    $CimCounters = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue
-    foreach ($C in $CimCounters) {
-        Write-Host "CIM DeviceId: $($C.DeviceId) | Temp: $($C.Temperature) | Wear: $($C.Wear)"
-    }
-} catch {
-    Write-Host "  [!] CIM Query Failed: $_" -ForegroundColor Red
-}
+    Write-Host "  Calculated Health Display: $HealthText" -ForegroundColor Yellow
+    Write-Host "  Calculated Temp Display:   $TempText" -ForegroundColor Yellow
 
-# METHOD 3: Partition to Disk Mapping
-Write-Host "`n--- METHOD 3: Partition to Drive Letter Association ---" -ForegroundColor Yellow
-foreach ($Disk in $PhysicalDisks) {
-    $Parts = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
-    foreach ($P in $Parts) {
-        if ($P.DriveLetter) {
-            Write-Host "Physical Disk $($Disk.DeviceId) ($($Disk.FriendlyName)) ===> Drive Letter $($P.DriveLetter):" -ForegroundColor Cyan
+    # 2. Drive Letter Mapping Fix (using Get-Disk instead of Get-Partition -DiskNumber)
+    try {
+        $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
+        if ($DiskObj) {
+            $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
+            foreach ($Part in $Partitions) {
+                if ($Part.DriveLetter) {
+                    Write-Host "  ===> Maps to Drive Letter: [$($Part.DriveLetter):]" -ForegroundColor Cyan
+                }
+            }
+        } else {
+            Write-Host "  [!] Could not map disk to Get-Disk object" -ForegroundColor Red
         }
+    } catch {
+        Write-Host "  [!] Partition mapping error: $_" -ForegroundColor Red
     }
 }
 
