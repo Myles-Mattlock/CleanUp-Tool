@@ -37,10 +37,10 @@ Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor G
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- NATIVE WINDOW DWM COLORING ---
-$DwmApi = Add-Type -MemberDefinition @"
+Add-Type -MemberDefinition @"
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-"@ -Name "DwmApi" -Namespace "Win32" -PassThru
+"@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
 # --- CONFIGURATION ---
 $Global:CurrentVersion = "3.0.0" 
@@ -269,16 +269,16 @@ function Save-LogAndMaintainHistory {
     } catch { Write-GuiLog "Note: Could not save log to disk." }
 }
 
-function Set-ActiveProfileButton ($Profile) {
-    $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
-    $BtnProfileServer.Background  = if ($Profile -eq "Server")  { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileServer.Foreground  = if ($Profile -eq "Server")  { $BrushActiveFG } else { $BrushInactiveFG }
-    $BtnProfileCustom.Background  = if ($Profile -eq "Custom")  { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileCustom.Foreground  = if ($Profile -eq "Custom")  { $BrushActiveFG } else { $BrushInactiveFG }
+function Set-ActiveProfileButton ($ProfileMode) {
+    $BtnProfileDefault.Background = if ($ProfileMode -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileDefault.Foreground = if ($ProfileMode -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
+    $BtnProfileServer.Background  = if ($ProfileMode -eq "Server")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileServer.Foreground  = if ($ProfileMode -eq "Server")  { $BrushActiveFG } else { $BrushInactiveFG }
+    $BtnProfileCustom.Background  = if ($ProfileMode -eq "Custom")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileCustom.Foreground  = if ($ProfileMode -eq "Custom")  { $BrushActiveFG } else { $BrushInactiveFG }
 }
 
-function Evaluate-CurrentProfile {
+function Invoke-CurrentProfileEvaluation {
     if ($Global:IsUpdatingProfile -or (-not $BtnStart.IsEnabled)) { return }
     if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) { Set-ActiveProfileButton "Default" }
     elseif ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and (-not $ChkFlushDNS.IsChecked) -and (-not $ChkDism.IsChecked)) { Set-ActiveProfileButton "Server" }
@@ -292,12 +292,12 @@ function Evaluate-CurrentProfile {
         $this.Background = if ($this.Background.ToString() -eq $BrushActiveBG.ToString()) { $BrushActiveHover } else { $BrushInactiveHvr }
         if ($this.Background.ToString() -ne $BrushActiveHover.ToString()) { $this.Foreground = $BrushActiveFG }
     })
-    $_.Add_MouseLeave({ if ($BtnStart.IsEnabled) { Evaluate-CurrentProfile } })
+    $_.Add_MouseLeave({ if ($BtnStart.IsEnabled) { Invoke-CurrentProfileEvaluation } })
 }
 
 $TaskCheckboxes | ForEach-Object {
-    $_.Add_Checked({ Evaluate-CurrentProfile })
-    $_.Add_Unchecked({ Evaluate-CurrentProfile })
+    $_.Add_Checked({ Invoke-CurrentProfileEvaluation })
+    $_.Add_Unchecked({ Invoke-CurrentProfileEvaluation })
 }
 
 # Profile Clicks
@@ -329,7 +329,8 @@ function Write-GuiLog ($Message) {
 # Diagnostics & Updates
 function Get-DriveHealthDiagnostics {
     Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
-    $HealthStatusText = "Healthy"; $TempStatusText = "N/A"
+    $TxtDriveHealth.Text = "Healthy"
+    $TempStatusText = "N/A"
     try {
         Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
             Write-GuiLog "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)"
@@ -338,15 +339,15 @@ function Get-DriveHealthDiagnostics {
                 if ($PhysDisk) {
                     $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
                     if ($Counter.Temperature -gt 0) { $TempStatusText = "$($Counter.Temperature) °C" }
-                    if ($Counter.Wear -ne $null) { $HealthStatusText = "$(100 - $Counter.Wear)% Health" }
+                    if ($null -ne $Counter.Wear) { $TxtDriveHealth.Text = "$(100 - $Counter.Wear)% Health" }
                 }
             }
         }
-    } catch { $HealthStatusText = "Healthy" }
-    $TxtDriveHealth.Text = $HealthStatusText; $TxtDriveTemp.Text = $TempStatusText
+    } catch { $TxtDriveHealth.Text = "Healthy" }
+    $TxtDriveTemp.Text = $TempStatusText
 }
 
-function Check-ForUpdates {
+function Test-ForUpdates {
     Write-GuiLog "Checking for updates..."
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -365,7 +366,7 @@ $Window.Add_Loaded({
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         $DarkTealColor = 0x00382D12 
-        [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, 35, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
+        [Win32.Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, 35, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
 
     @("Logo.jpg", "LogoRight.jpg") | ForEach-Object {
@@ -383,7 +384,7 @@ $Window.Add_Loaded({
     
     Write-GuiLog "System Cleanup Initialized."
     Get-DriveHealthDiagnostics
-    Check-ForUpdates
+    Test-ForUpdates
 })
 
 # Async Execution Worker
@@ -411,7 +412,7 @@ $BtnStart.Add_Click({
         function Send-Log ($msg) { if (-not [string]::IsNullOrWhiteSpace($msg)) { $LogQueue.Enqueue($msg) } }
         function Send-Progress ($val, $status) { $ProgressQueue.Enqueue(@{ Value = $val; Status = $status }) }
 
-        function Run-SilentProcess ($FileName, $Arguments) {
+        function Invoke-SilentProcess ($FileName, $Arguments) {
             try {
                 $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
                     FileName = $FileName; Arguments = $Arguments; UseShellExecute = $false
@@ -431,7 +432,7 @@ $BtnStart.Add_Click({
 
         foreach ($File in $RegFiles) {
             $FilePath = Join-Path $CurrentDir $File
-            if (Test-Path $FilePath) { Run-SilentProcess "reg.exe" "import `"$FilePath`"" }
+            if (Test-Path $FilePath) { Invoke-SilentProcess "reg.exe" "import `"$FilePath`"" }
         }
 
         if ($SelectedTasks.DoTemp) {
@@ -457,7 +458,7 @@ $BtnStart.Add_Click({
             Send-Progress $StartPercent "Running Disk Cleanup Utility..."
             Send-Log "=== RUNNING CLEANMGR UTILITY ==="
             $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-            Run-SilentProcess "cleanmgr.exe" $CleanParam
+            Invoke-SilentProcess "cleanmgr.exe" $CleanParam
             $CompletedTasks++
             $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $EndPercent "Disk cleanup complete."
@@ -466,14 +467,14 @@ $BtnStart.Add_Click({
         if ($SelectedTasks.DoFlushDNS) {
             Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Flushing DNS Cache..."
             Send-Log "=== FLUSHING DNS CACHE ==="
-            Run-SilentProcess "ipconfig.exe" "/flushdns"
+            Invoke-SilentProcess "ipconfig.exe" "/flushdns"
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DNS Cache flushed."
         }
 
         if ($SelectedTasks.DoDism) {
             Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Optimizing DISM Component Store..."
             Send-Log "=== RUNNING DISM COMPONENT STORE CLEANUP ==="
-            Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+            Invoke-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DISM cleanup complete."
         }
 
