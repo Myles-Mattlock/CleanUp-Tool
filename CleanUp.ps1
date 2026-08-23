@@ -370,113 +370,86 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Ultra-Accurate Multi-Tier Diagnostics Worker (CrystalDiskInfo Parity)
+# Reliable Asynchronous Diagnostics Executed via Background Job Token
 function Request-AsyncDriveStats ($Queue) {
-    $Script = {
-        param($Q)
+    $JobScript = {
         $Results = @()
         try {
-            # 1. Primary: Direct CIM Query to MSFT_StorageReliabilityCounter
-            $ReliabilityData = @{}
-            try {
-                Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue | ForEach-Object {
-                    $ReliabilityData[$_.DeviceId] = $_
-                }
-            } catch {}
-
-            # 2. Secondary: Raw SMART Byte Parser for ATA/SATA/NVMe Controllers
-            $SmartTemps = @{}
-            try {
-                Get-CimInstance -Namespace "root\wmi" -ClassName "MSStorageDriver_ATAPISmartData" -ErrorAction SilentlyContinue | ForEach-Object {
-                    $VendorData = $_.VendorSpecific
-                    if ($VendorData -and $VendorData.Length -ge 12) {
-                        for ($i = 2; $i -le ($VendorData.Length - 12); $i += 12) {
-                            $AttrId = $VendorData[$i]
-                            # Attribute 194 (0xC2: Device Temp) or 190 (0xBE: Temp Difference)
-                            if ($AttrId -eq 194 -or $AttrId -eq 190) {
-                                # Extract current raw temp via bitwise band mask
-                                $RawVal = [int]($VendorData[$i + 5] -band 0xFF)
-                                
-                                # Normalize Kelvin if reported in Kelvin (above 150K)
-                                if ($RawVal -gt 150 -and $RawVal -lt 400) { 
-                                    $RawVal = [Math]::Round($RawVal - 273.15) 
-                                }
-
-                                # Validate accurate Celsius SSD range (10°C - 95°C)
-                                if ($RawVal -ge 10 -and $RawVal -le 95) {
-                                    $SmartTemps[$_.InstanceName] = $RawVal
-                                    break
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {}
-
-            # Process Physical Disks via MSFT Storage Namespace
-            $PhysicalDisks = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
-            foreach ($Disk in $PhysicalDisks) {
+            # Get physical disks natively via full Storage Module
+            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            foreach ($Disk in $Disks) {
                 $TempStr = "N/A"
                 $HealthStr = "100% Health"
 
-                # Check Storage Reliability Counter
-                if ($ReliabilityData.ContainsKey($Disk.DeviceId)) {
-                    $Rel = $ReliabilityData[$Disk.DeviceId]
-                    $RawTemp = $Rel.Temperature
-                    
-                    # Auto-convert Kelvin to Celsius if required
-                    if ($RawTemp -gt 150 -and $RawTemp -lt 400) { 
-                        $RawTemp = [Math]::Round($RawTemp - 273.15) 
+                # 1. Official Storage Reliability Counter Method
+                try {
+                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($Counter) {
+                        $RawT = $Counter.Temperature
+                        if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
+                        if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
+                        
+                        if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
                     }
-                    
-                    if ($RawTemp -ge 10 -and $RawTemp -le 95) { 
-                        $TempStr = "$RawTemp °C" 
-                    }
+                } catch {}
 
-                    # Extract Health / Wear %
-                    if ($null -ne $Rel.Wear) { 
-                        $HealthStr = "$(100 - $Rel.Wear)% Health" 
-                    }
-                }
-
-                # Fallback to Parsed SMART Attribute
-                if ($TempStr -eq "N/A" -and $SmartTemps.Count -gt 0) {
-                    foreach ($InstName in $SmartTemps.Keys) {
-                        if ($InstName -like "*$($Disk.DeviceId)*" -or $InstName -like "*$($Disk.Model)*") {
-                            $TempStr = "$($SmartTemps[$InstName]) °C"
-                            break
-                        }
-                    }
-                }
-
-                # Map Physical Disk to Drive Letters
-                $DiskIndex = $Disk.DeviceId
-                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
-                foreach ($Part in $Partitions) {
-                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
-                    foreach ($LogDisk in $LogicalDisks) {
-                        if ($LogDisk.DeviceID) {
-                            $Results += @{
-                                DriveLetter = "$($LogDisk.DeviceID)"
-                                Health      = $HealthStr
-                                Temp        = $TempStr
+                # 2. Storage Health Report Fallback (NVMe native controller query)
+                if ($TempStr -eq "N/A" -or $HealthStr -eq "100% Health") {
+                    try {
+                        $Report = $Disk | Get-StorageHealthReport -ErrorAction SilentlyContinue
+                        if ($Report -and $Report.HealthReport) {
+                            $TempObj = $Report.HealthReport | Where-Object { $_.Name -like "*Temperature*" -and $_.Value -gt 0 }
+                            if ($TempObj) {
+                                $t = $TempObj.Value
+                                if ($t -gt 150 -and $t -lt 400) { $t = [Math]::Round($t - 273.15) }
+                                if ($t -ge 10 -and $t -le 95) { $TempStr = "$t °C" }
                             }
+                            $WearObj = $Report.HealthReport | Where-Object { $_.Name -like "*Wear*" -or $_.Name -like "*Percentage Used*" }
+                            if ($WearObj) { $HealthStr = "$(100 - $WearObj.Value)% Health" }
+                        }
+                    } catch {}
+                }
+
+                # Map Physical Disk to Assigned Volume Drive Letters
+                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                foreach ($Part in $Partitions) {
+                    if ($Part.DriveLetter) {
+                        $Results += @{
+                            DriveLetter = "$($Part.DriveLetter):"
+                            Health      = $HealthStr
+                            Temp        = $TempStr
                         }
                     }
                 }
             }
         } catch {}
-
-        $Q.Enqueue(@{ Type = "Stats"; Data = $Results })
+        return $Results
     }
 
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
-    [void]$ps.AddScript($Script)
-    [void]$ps.AddArgument($Queue)
-    [void]$ps.BeginInvoke()
+    [void]$ps.AddScript($JobScript)
+    
+    $async = $ps.BeginInvoke()
+    
+    # Non-blocking polling timer for completion
+    $PollTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $PollTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $PollTimer.Add_Tick({
+        if ($async.IsCompleted) {
+            $this.Stop()
+            try {
+                $Data = $ps.EndInvoke($async)
+                $ps.Dispose(); $rs.Dispose()
+                if ($Data) {
+                    $Queue.Enqueue(@{ Type = "Stats"; Data = $Data })
+                }
+            } catch {}
+        }
+    })
+    $PollTimer.Start()
 }
 
 $Window.Add_Loaded({
