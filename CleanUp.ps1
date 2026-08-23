@@ -90,6 +90,9 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="border" Property="Background" Value="#444444"/>
                                 <Setter Property="Foreground" Value="#FFFFFF"/>
