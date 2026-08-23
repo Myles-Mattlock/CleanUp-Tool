@@ -60,7 +60,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="820" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="860" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
@@ -145,34 +145,8 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
             </Grid>
         </Border>
 
-        <!-- Top Stats Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,15">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-        </Grid>
+        <!-- Top Stats Bar Container for Multiple Drives -->
+        <StackPanel x:Name="DriveStatsPanel" Grid.Row="1" Margin="0,0,0,15"/>
 
         <!-- Task Selection Checkboxes & Profile Buttons -->
         <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
@@ -246,7 +220,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
-@("ImgLogo", "ImgLogoRight", "TxtVersion", "TxtInitialSpace", "TxtReclaimed", "TxtDriveHealth", "TxtDriveTemp", 
+@("ImgLogo", "ImgLogoRight", "TxtVersion", "DriveStatsPanel", "TxtReclaimed", 
   "TxtLog", "LogScroll", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnStart",
   "BtnProfileDefault", "BtnProfileServer", "BtnProfileCustom",
   "ChkTempFiles", "ChkRecycleBin", "ChkCleanmgr", "ChkFlushDNS", "ChkDism") | ForEach-Object {
@@ -269,6 +243,7 @@ $BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
+$Global:DriveUIMap = @{}
 
 function Save-LogAndMaintainHistory {
     try {
@@ -344,25 +319,93 @@ function Write-GuiLog ($Message) {
     $LogScroll.ScrollToEnd()
 }
 
-# Background Drive Diagnostic Worker Function
+# Helper to construct WPF Drive Rows
+function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
+    $Grid = New-Object System.Windows.Controls.Grid
+    $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
+
+    0..2 | ForEach-Object {
+        $col = New-Object System.Windows.Controls.ColumnDefinition
+        $col.Width = if ($_ -eq 0) { [System.Windows.GridLength]::new(1.2, [System.Windows.GridUnitType]::Star) } else { [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star) }
+        [void]$Grid.ColumnDefinitions.Add($col)
+        if ($_ -lt 2) {
+            $spaceCol = New-Object System.Windows.Controls.ColumnDefinition
+            $spaceCol.Width = [System.Windows.GridLength]::new(15, [System.Windows.GridUnitType]::Pixel)
+            [void]$Grid.ColumnDefinitions.Add($spaceCol)
+        }
+    }
+
+    function Create-Card ($Title, $ValText, $FgHex, $ColIdx) {
+        $Border = New-Object System.Windows.Controls.Border
+        $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
+        $Border.CornerRadius = New-Object System.Windows.CornerRadius(6)
+        $Border.Padding = New-Object System.Windows.Thickness(12)
+        [System.Windows.Controls.Grid]::SetColumn($Border, $ColIdx)
+
+        $Stack = New-Object System.Windows.Controls.StackPanel
+        $TTitle = New-Object System.Windows.Controls.TextBlock
+        $TTitle.Text = $Title; $TTitle.FontSize = 11; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
+        $TTitle.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#888888")
+
+        $TVal = New-Object System.Windows.Controls.TextBlock
+        $TVal.Text = $ValText; $TVal.FontSize = 16; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
+        $TVal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($FgHex)
+        $TVal.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
+
+        [void]$Stack.Children.Add($TTitle)
+        [void]$Stack.Children.Add($TVal)
+        $Border.Child = $Stack
+        return @{ Border = $Border; Text = $TVal }
+    }
+
+    $CardSpace  = Create-Card "DRIVE ($DriveLetter) INITIAL FREE" $InitialFreeText "#FFFFFF" 0
+    $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Checking..." "#00E5FF" 2
+    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "-- °C" "#FFCC00" 4
+
+    [void]$Grid.Children.Add($CardSpace.Border)
+    [void]$Grid.Children.Add($CardHealth.Border)
+    [void]$Grid.Children.Add($CardTemp.Border)
+
+    [void]$DriveStatsPanel.Children.Add($Grid)
+    $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
+}
+
+# Multi-Drive Async Diagnostics Worker (Uses exact logic from your working script)
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
-        $HealthText = "Healthy"; $TempText = "N/A"
+        $StatsList = @()
+
         try {
-            Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
-                if ($TempText -eq "N/A") {
-                    $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $_.Index -ErrorAction SilentlyContinue
-                    if ($PhysDisk) {
-                        $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            foreach ($Disk in $Disks) {
+                $HealthText = "Healthy"; $TempText = "N/A"
+                
+                try {
+                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($Counter) {
                         if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
                         if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
+                    }
+                } catch {}
+
+                # Map Physical Disk to Drive Letters
+                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                foreach ($Part in $Partitions) {
+                    if ($Part.DriveLetter) {
+                        $StatsList += @{
+                            DriveLetter = "$($Part.DriveLetter):"
+                            Health      = $HealthText
+                            Temp        = $TempText
+                        }
                     }
                 }
             }
         } catch {}
-        $Q.Enqueue(@{ Type = "Stats"; Health = $HealthText; Temp = $TempText })
+
+        $Q.Enqueue(@{ Type = "Stats"; Data = $StatsList })
     }
+
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
     $ps = [powershell]::Create()
@@ -392,38 +435,31 @@ $Window.Add_Loaded({
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
     
-    # Fast Instant .NET Free-Space Check
-    $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
-    if ($DriveC) {
-        $Global:StartingFreeSpace = $DriveC.AvailableFreeSpace
-        $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
+    # Calculate Free Space for detected fixed drives (limit to first 3)
+    $Drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | Select-Object -First 3
+    foreach ($Drive in $Drives) {
+        $Letter = $Drive.Name.TrimEnd('\')
+        $FreeGB = "$([Math]::Round($Drive.AvailableFreeSpace / 1GB, 2)) GB"
+        if ($Letter -eq "C:") { $Global:StartingFreeSpace = $Drive.AvailableFreeSpace }
+        Add-DriveRowUI -DriveLetter $Letter -InitialFreeText $FreeGB
     }
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # GLOBAL INITIALIZATION QUEUE
+    # GLOBAL INITIALIZATION & MONITOR QUEUES
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 
-    # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Diagnostics & Updates)
+    # ASYNCHRONOUS BACKGROUND STARTUP WORKER
     $InitScript = {
         param($RepoName, $CurrentVersion, $InitQueue)
 
         # 1. Initial SMART Hardware Check
-        $HealthText = "Healthy"; $TempText = "N/A"
         try {
             Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
                 $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)" })
-                if ($TempText -eq "N/A") {
-                    $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $_.Index -ErrorAction SilentlyContinue
-                    if ($PhysDisk) {
-                        $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                        if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
-                        if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
-                    }
-                }
             }
         } catch {}
-        $InitQueue.Enqueue(@{ Type = "Stats"; Health = $HealthText; Temp = $TempText })
 
         # 2. Check Updates
         try {
@@ -457,10 +493,6 @@ $Window.Add_Loaded({
         $item = $null
         while ($Global:InitQueue.TryDequeue([ref]$item)) {
             if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
-            elseif ($item.Type -eq "Stats") {
-                $TxtDriveHealth.Text = $item.Health
-                $TxtDriveTemp.Text   = $item.Temp
-            }
         }
         if ($InitAsync.IsCompleted) {
             $this.Stop()
@@ -470,22 +502,43 @@ $Window.Add_Loaded({
     $InitTimer.Start()
 
     # --- RECURRING 30-SECOND HARDWARE MONITOR TIMER ---
-    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
     $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
     $MonitorTimer.Add_Tick({
-        # Check and process any returning queue data
         $mItem = $null
         while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
             if ($mItem.Type -eq "Stats") {
-                $TxtDriveHealth.Text = $mItem.Health
-                $TxtDriveTemp.Text   = $mItem.Temp
+                foreach ($Stat in $mItem.Data) {
+                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
+                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
+                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
+                    }
+                }
             }
         }
-        # Fire off non-blocking async background scan
         Request-AsyncDriveStats -Queue $Global:MonitorQueue
     })
     $MonitorTimer.Start()
+
+    # Fast startup stats fetch
+    $FastInitTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $FastInitTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $FastInitTimer.Add_Tick({
+        $mItem = $null
+        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
+            if ($mItem.Type -eq "Stats") {
+                foreach ($Stat in $mItem.Data) {
+                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
+                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
+                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
+                    }
+                }
+                $this.Stop()
+            }
+        }
+    })
+    $FastInitTimer.Start()
+    Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
 # Async Execution Worker
