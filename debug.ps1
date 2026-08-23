@@ -1,50 +1,40 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    STORAGE TELEMETRY DEBUG TEST - PART 3" -ForegroundColor Cyan
+Write-Host "    DEEP STORAGE TELEMETRY INSPECTOR" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
 
 foreach ($Disk in $PhysicalDisks) {
     Write-Host "`n--------------------------------------------------" -ForegroundColor Gray
-    Write-Host "Physical Disk Index $($Disk.DeviceId) - $($Disk.FriendlyName)" -ForegroundColor Green
+    Write-Host "Disk Index $($Disk.DeviceId): $($Disk.FriendlyName)" -ForegroundColor Green
 
-    $HealthText = "Healthy"
-    $TempText   = "N/A"
+    # 1. Inspect all raw properties on StorageReliabilityCounter
+    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+    if ($Counter) {
+        Write-Host "`n[Raw StorageReliabilityCounter Properties]:" -ForegroundColor Yellow
+        $Counter.PSObject.Properties | ForEach-Object {
+            if ($_.Value -ne $null -and $_.Value -ne "") {
+                Write-Host "  $($_.Name) = $($_.Value)"
+            }
+        }
+    }
 
+    # 2. Inspect MSFT_PhysicalDisk properties
+    Write-Host "`n[Raw PhysicalDisk Properties]:" -ForegroundColor Yellow
+    Write-Host "  HealthStatus      = $($Disk.HealthStatus)"
+    Write-Host "  OperationalStatus = $($Disk.OperationalStatus)"
+    Write-Host "  AllocatedSize     = $($Disk.AllocatedSize)"
+
+    # 3. Check for MSFT_PhysicalDiskStorageNode / StorageNode telemetry
     try {
-        $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-        if ($Counter) {
-            # Temp check
-            if ($Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) {
-                $TempText = "$($Counter.Temperature) °C"
-            }
-
-            # Explicit null/type check for Wear
-            if ($PSItem -ne $null -and $null -ne $Counter.Wear) {
-                $WearInt = [int]$Counter.Wear
-                $HealthValue = 100 - $WearInt
-                $HealthText  = "$HealthValue% Health"
-                Write-Host "  Raw Wear Value Read: $WearInt%" -ForegroundColor Gray
-            }
+        $StorageNode = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue | Where-Object DeviceId -eq $Disk.DeviceId
+        if ($StorageNode) {
+            Write-Host "`n[CIM MSFT_PhysicalDisk]:" -ForegroundColor Yellow
+            Write-Host "  Usage = $($StorageNode.Usage)"
+            Write-Host "  OperationalStatus = $($StorageNode.OperationalStatus)"
         }
-    } catch {
-        Write-Host "  Error reading counter: $_" -ForegroundColor Red
-    }
-
-    Write-Host "  Calculated Health Display: $HealthText" -ForegroundColor Yellow
-    Write-Host "  Calculated Temp Display:   $TempText" -ForegroundColor Yellow
-
-    # Drive mapping
-    $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
-    if ($DiskObj) {
-        $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
-        foreach ($Part in $Partitions) {
-            if ($Part.DriveLetter) {
-                Write-Host "  ===> Maps to Drive Letter: [$($Part.DriveLetter):]" -ForegroundColor Cyan
-            }
-        }
-    }
+    } catch {}
 }
 
 Write-Host "`n==================================================" -ForegroundColor Cyan
