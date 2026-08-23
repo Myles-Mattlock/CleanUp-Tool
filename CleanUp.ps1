@@ -60,7 +60,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="820" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="860" Width="960" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
@@ -145,34 +145,8 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
             </Grid>
         </Border>
 
-        <!-- Top Stats Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,15">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="15" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Border>
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="15" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Border>
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="15" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Border>
-        </Grid>
+        <!-- Top Stats Bar StackPanel for Separate Drive Rows -->
+        <StackPanel x:Name="DriveStatsPanel" Grid.Row="1" Margin="0,0,0,15"/>
 
         <!-- Task Selection Checkboxes & Profile Buttons -->
         <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
@@ -246,7 +220,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
-@("ImgLogo", "ImgLogoRight", "TxtVersion", "TxtInitialSpace", "TxtReclaimed", "TxtDriveHealth", "TxtDriveTemp", 
+@("ImgLogo", "ImgLogoRight", "TxtVersion", "DriveStatsPanel", "TxtReclaimed",
   "TxtLog", "LogScroll", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnStart",
   "BtnProfileDefault", "BtnProfileServer", "BtnProfileCustom",
   "ChkTempFiles", "ChkRecycleBin", "ChkCleanmgr", "ChkFlushDNS", "ChkDism") | ForEach-Object {
@@ -269,6 +243,7 @@ $BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
+$Global:DriveUIMap = @{}
 
 function Save-LogAndMaintainHistory {
     try {
@@ -344,35 +319,107 @@ function Write-GuiLog ($Message) {
     $LogScroll.ScrollToEnd()
 }
 
-# Background Drive Diagnostic Worker Function
+# Build a Dedicated Stat Bar Row per Drive
+function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
+    $Grid = New-Object System.Windows.Controls.Grid
+    $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
+
+    0..2 | ForEach-Object {
+        $col = New-Object System.Windows.Controls.ColumnDefinition
+        $col.Width = if ($_ -eq 0) { [System.Windows.GridLength]::new(1.2, [System.Windows.GridUnitType]::Star) } else { [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star) }
+        [void]$Grid.ColumnDefinitions.Add($col)
+        if ($_ -lt 2) {
+            $spaceCol = New-Object System.Windows.Controls.ColumnDefinition
+            $spaceCol.Width = [System.Windows.GridLength]::new(15, [System.Windows.GridUnitType]::Pixel)
+            [void]$Grid.ColumnDefinitions.Add($spaceCol)
+        }
+    }
+
+    # Helper function to generate cards
+    function Create-Card ($Title, $ValText, $FgHex, $ColIdx) {
+        $Border = New-Object System.Windows.Controls.Border
+        $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
+        $Border.CornerRadius = New-Object System.Windows.CornerRadius(6)
+        $Border.Padding = New-Object System.Windows.Thickness(12)
+        [System.Windows.Controls.Grid]::SetColumn($Border, $ColIdx)
+
+        $Stack = New-Object System.Windows.Controls.StackPanel
+        $TTitle = New-Object System.Windows.Controls.TextBlock
+        $TTitle.Text = $Title; $TTitle.FontSize = 11; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
+        $TTitle.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#888888")
+
+        $TVal = New-Object System.Windows.Controls.TextBlock
+        $TVal.Text = $ValText; $TVal.FontSize = 16; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
+        $TVal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($FgHex)
+        $TVal.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
+
+        [void]$Stack.Children.Add($TTitle)
+        [void]$Stack.Children.Add($TVal)
+        $Border.Child = $Stack
+        return @{ Border = $Border; Text = $TVal }
+    }
+
+    $CardSpace  = Create-Card "DRIVE ($DriveLetter) INITIAL FREE" $InitialFreeText "#FFFFFF" 0
+    $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Checking..." "#00E5FF" 2
+    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "-- °C" "#FFCC00" 4
+
+    [void]$Grid.Children.Add($CardSpace.Border)
+    [void]$Grid.Children.Add($CardHealth.Border)
+    [void]$Grid.Children.Add($CardTemp.Border)
+
+    [void]$DriveStatsPanel.Children.Add($Grid)
+    $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
+}
+
+# Robust Async Diagnostics Worker
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
-        $HealthList = @(); $TempList = @()
+        $Results = @()
         try {
-            $PhysDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-            foreach ($Disk in $PhysDisks) {
-                $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                $DriveLetter = (Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue | 
-                                Get-Volume -ErrorAction SilentlyContinue).DriveLetter | Where-Object { $_ } | Select-Object -First 1
+            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            foreach ($Disk in $Disks) {
+                $TempStr = "N/A"
+                $HealthStr = "100% Health"
 
-                $Prefix = if ($DriveLetter) { "$($DriveLetter):" } else { "Disk $($Disk.DeviceId)" }
+                # Query Reliability Counter
+                $Rel = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                if ($Rel) {
+                    if ($Rel.Temperature -gt 0) { $TempStr = "$($Rel.Temperature) °C" }
+                    if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
+                }
 
-                if ($Counter) {
-                    if ($Counter.Temperature -gt 0) { $TempList += "$Prefix $($Counter.Temperature)°C" }
-                    if ($null -ne $Counter.Wear) { $HealthList += "$Prefix $(100 - $Counter.Wear)%" }
-                    else { $HealthList += "$Prefix Healthy" }
-                } else {
-                    $HealthList += "$Prefix Healthy"
+                # Fallback: Storage Health Report (Works for NVMe/SATA where reliability counter fails)
+                if ($TempStr -eq "N/A" -or $HealthStr -eq "100% Health") {
+                    try {
+                        $Report = $Disk | Get-StorageHealthReport -ErrorAction SilentlyContinue
+                        if ($Report) {
+                            $TempMetric = $Report.HealthReport | Where-Object { $_.Name -like "*Temperature*" }
+                            if ($TempMetric -and $TempMetric.Value -gt 0) { $TempStr = "$($TempMetric.Value) °C" }
+                            
+                            $WearMetric = $Report.HealthReport | Where-Object { $_.Name -like "*Wear*" -or $_.Name -like "*Percentage Used*" }
+                            if ($WearMetric) { $HealthStr = "$(100 - $WearMetric.Value)% Health" }
+                        }
+                    } catch {}
+                }
+
+                # Map Physical Disks to Volumes
+                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                foreach ($Part in $Partitions) {
+                    if ($Part.DriveLetter) {
+                        $Results += @{
+                            DriveLetter = "$($Part.DriveLetter):"
+                            Health = $HealthStr
+                            Temp   = $TempStr
+                        }
+                    }
                 }
             }
         } catch {}
 
-        $FinalHealth = if ($HealthList) { $HealthList -join " | " } else { "Healthy" }
-        $FinalTemp   = if ($TempList)   { $TempList -join " | " } else { "N/A" }
-
-        $Q.Enqueue(@{ Type = "Stats"; Health = $FinalHealth; Temp = $FinalTemp })
+        $Q.Enqueue(@{ Type = "Stats"; Data = $Results })
     }
+
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
     $ps = [powershell]::Create()
@@ -402,16 +449,14 @@ $Window.Add_Loaded({
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
     
-    # Fast Instant Free-Space Check (Displays up to 3 drives cleanly)
-    $FreeSpaceParts = @()
+    # Render individual rows for each detected fixed drive
     $Drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | Select-Object -First 3
     foreach ($Drive in $Drives) {
-        $Name = $Drive.Name.TrimEnd('\')
-        $FreeGB = "$([Math]::Round($Drive.AvailableFreeSpace / 1GB, 1))GB"
-        if ($Name -eq "C:") { $Global:StartingFreeSpace = $Drive.AvailableFreeSpace }
-        $FreeSpaceParts += "$Name $FreeGB"
+        $Letter = $Drive.Name.TrimEnd('\')
+        $FreeGB = "$([Math]::Round($Drive.AvailableFreeSpace / 1GB, 2)) GB"
+        if ($Letter -eq "C:") { $Global:StartingFreeSpace = $Drive.AvailableFreeSpace }
+        Add-DriveRowUI -DriveLetter $Letter -InitialFreeText $FreeGB
     }
-    $TxtInitialSpace.Text = if ($FreeSpaceParts) { $FreeSpaceParts -join " | " } else { "Calculating..." }
 
     Write-GuiLog "System Cleanup Initialized."
 
@@ -477,8 +522,12 @@ $Window.Add_Loaded({
         $mItem = $null
         while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
             if ($mItem.Type -eq "Stats") {
-                $TxtDriveHealth.Text = $mItem.Health
-                $TxtDriveTemp.Text   = $mItem.Temp
+                foreach ($Stat in $mItem.Data) {
+                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
+                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
+                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
+                    }
+                }
             }
         }
         Request-AsyncDriveStats -Queue $Global:MonitorQueue
