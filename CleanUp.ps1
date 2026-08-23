@@ -370,35 +370,56 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Synchronous Multi-Drive Diagnostic Updater
-function Update-DriveHealthAndTemp {
-    try {
-        $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-        foreach ($Disk in $PhysicalDisks) {
-            $TempStr = "N/A"
-            $HealthStr = "Healthy"
+# Asynchronous Multi-Drive Health & Temperature Worker
+function Request-AsyncDriveStats ($Queue) {
+    $Script = {
+        param($Q)
+        $Results = @()
+        try {
+            # Pull WMI Storage Reliability counters
+            $Counters = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue
+            $Disks    = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
 
-            try {
-                $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            foreach ($Disk in $Disks) {
+                $TempStr = "N/A"
+                $HealthStr = "Healthy"
+
+                $Counter = $Counters | Where-Object { $_.DeviceId -eq $Disk.DeviceId } | Select-Object -First 1
                 if ($Counter) {
-                    if ($Counter.Temperature -gt 0) { $TempStr = "$($Counter.Temperature) °C" }
+                    $RawT = $Counter.Temperature
+                    if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
+                    if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
                     if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
                 }
-            } catch {}
 
-            # Map PhysicalDisk to Drive Letters using Get-Partition
-            $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
-            foreach ($Part in $Partitions) {
-                if ($Part.DriveLetter) {
-                    $Key = "$($Part.DriveLetter):"
-                    if ($Global:DriveUIMap.ContainsKey($Key)) {
-                        $Global:DriveUIMap[$Key].Health.Text = $HealthStr
-                        $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
+                # Map disk index to drive letters via Partition WMI
+                $DiskIndex = $Disk.DeviceId
+                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
+                foreach ($Part in $Partitions) {
+                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
+                    foreach ($LogDisk in $LogicalDisks) {
+                        if ($LogDisk.DeviceID) {
+                            $Results += @{
+                                DriveLetter = "$($LogDisk.DeviceID):"
+                                Health      = $HealthStr
+                                Temp        = $TempStr
+                            }
+                        }
                     }
                 }
             }
-        }
-    } catch {}
+        } catch {}
+
+        $Q.Enqueue(@{ Type = "Stats"; Data = $Results })
+    }
+
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript($Script)
+    [void]$ps.AddArgument($Queue)
+    [void]$ps.BeginInvoke()
 }
 
 $Window.Add_Loaded({
@@ -432,11 +453,9 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # Immediate update for health/temp
-    Update-DriveHealthAndTemp
-
-    # GLOBAL INITIALIZATION QUEUE
+    # GLOBAL INITIALIZATION & MONITOR QUEUES
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+    $Global:MonitorQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
 
     # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Log & Version Check)
     $InitScript = {
@@ -492,8 +511,24 @@ $Window.Add_Loaded({
     # Recurring 30-second monitor update
     $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
     $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
-    $MonitorTimer.Add_Tick({ Update-DriveHealthAndTemp })
+    $MonitorTimer.Add_Tick({
+        $mItem = $null
+        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
+            if ($mItem.Type -eq "Stats") {
+                foreach ($Stat in $mItem.Data) {
+                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
+                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
+                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
+                    }
+                }
+            }
+        }
+        Request-AsyncDriveStats -Queue $Global:MonitorQueue
+    })
     $MonitorTimer.Start()
+
+    # Initial async fetch trigger
+    Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
 # Async Execution Worker
