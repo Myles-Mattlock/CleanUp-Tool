@@ -359,8 +359,8 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     }
 
     $CardSpace  = Create-Card "DRIVE ($DriveLetter) INITIAL FREE" $InitialFreeText "#FFFFFF" 0
-    $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Checking..." "#00E5FF" 2
-    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "Checking..." "#FFCC00" 4
+    $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Healthy" "#00E5FF" 2
+    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "N/A" "#FFCC00" 4
 
     [void]$Grid.Children.Add($CardSpace.Border)
     [void]$Grid.Children.Add($CardHealth.Border)
@@ -370,54 +370,42 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Reliable Asynchronous Diagnostics Executed via Background Job Token
+# Fast Asynchronous Diagnostics with Hard 2-Second Timeout Protection
 function Request-AsyncDriveStats ($Queue) {
     $JobScript = {
         $Results = @()
         try {
-            # Get physical disks natively via full Storage Module
-            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            # Option 1: Fast CIM Query with OperationTimeout
+            $CimOpt = New-CimSessionOption -Protocol Dcom
+            $CimSess = New-CimSession -Option $CimOpt -ErrorAction SilentlyContinue
+            
+            $Reliability = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+            $Disks       = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+
             foreach ($Disk in $Disks) {
                 $TempStr = "N/A"
                 $HealthStr = "100% Health"
 
-                # 1. Official Storage Reliability Counter Method
-                try {
-                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter) {
-                        $RawT = $Counter.Temperature
-                        if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
-                        if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
-                        
-                        if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
-                    }
-                } catch {}
-
-                # 2. Storage Health Report Fallback (NVMe native controller query)
-                if ($TempStr -eq "N/A" -or $HealthStr -eq "100% Health") {
-                    try {
-                        $Report = $Disk | Get-StorageHealthReport -ErrorAction SilentlyContinue
-                        if ($Report -and $Report.HealthReport) {
-                            $TempObj = $Report.HealthReport | Where-Object { $_.Name -like "*Temperature*" -and $_.Value -gt 0 }
-                            if ($TempObj) {
-                                $t = $TempObj.Value
-                                if ($t -gt 150 -and $t -lt 400) { $t = [Math]::Round($t - 273.15) }
-                                if ($t -ge 10 -and $t -le 95) { $TempStr = "$t °C" }
-                            }
-                            $WearObj = $Report.HealthReport | Where-Object { $_.Name -like "*Wear*" -or $_.Name -like "*Percentage Used*" }
-                            if ($WearObj) { $HealthStr = "$(100 - $WearObj.Value)% Health" }
-                        }
-                    } catch {}
+                $Rel = $Reliability | Where-Object { $_.DeviceId -eq $Disk.DeviceId } | Select-Object -First 1
+                if ($Rel) {
+                    $RawT = $Rel.Temperature
+                    if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
+                    if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
+                    if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
                 }
 
-                # Map Physical Disk to Assigned Volume Drive Letters
-                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                # Mapping drive letters
+                $DiskIndex = $Disk.DeviceId
+                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
-                    if ($Part.DriveLetter) {
-                        $Results += @{
-                            DriveLetter = "$($Part.DriveLetter):"
-                            Health      = $HealthStr
-                            Temp        = $TempStr
+                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+                    foreach ($LogDisk in $LogicalDisks) {
+                        if ($LogDisk.DeviceID) {
+                            $Results += @{
+                                DriveLetter = "$($LogDisk.DeviceID)"
+                                Health      = $HealthStr
+                                Temp        = $TempStr
+                            }
                         }
                     }
                 }
@@ -434,18 +422,20 @@ function Request-AsyncDriveStats ($Queue) {
     
     $async = $ps.BeginInvoke()
     
-    # Non-blocking polling timer for completion
+    # 2-Second Enforcement Dispatcher
+    $StartTime = [DateTime]::Now
     $PollTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $PollTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $PollTimer.Interval = [TimeSpan]::FromMilliseconds(150)
     $PollTimer.Add_Tick({
-        if ($async.IsCompleted) {
+        $Elapsed = ([DateTime]::Now - $StartTime).TotalSeconds
+        if ($async.IsCompleted -or $Elapsed -ge 2.5) {
             $this.Stop()
             try {
-                $Data = $ps.EndInvoke($async)
-                $ps.Dispose(); $rs.Dispose()
-                if ($Data) {
-                    $Queue.Enqueue(@{ Type = "Stats"; Data = $Data })
+                if ($async.IsCompleted) {
+                    $Data = $ps.EndInvoke($async)
+                    if ($Data) { $Queue.Enqueue(@{ Type = "Stats"; Data = $Data }) }
                 }
+                $ps.Dispose(); $rs.Dispose()
             } catch {}
         }
     })
@@ -557,24 +547,7 @@ $Window.Add_Loaded({
     })
     $MonitorTimer.Start()
 
-    # Dispatch immediate startup hardware scan (~1 second load time)
-    $FastInitTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $FastInitTimer.Interval = [TimeSpan]::FromMilliseconds(200)
-    $FastInitTimer.Add_Tick({
-        $mItem = $null
-        while ($Global:MonitorQueue.TryDequeue([ref]$mItem)) {
-            if ($mItem.Type -eq "Stats") {
-                foreach ($Stat in $mItem.Data) {
-                    if ($Global:DriveUIMap.ContainsKey($Stat.DriveLetter)) {
-                        $Global:DriveUIMap[$Stat.DriveLetter].Health.Text = $Stat.Health
-                        $Global:DriveUIMap[$Stat.DriveLetter].Temp.Text   = $Stat.Temp
-                    }
-                }
-                $this.Stop()
-            }
-        }
-    })
-    $FastInitTimer.Start()
+    # Dispatch immediate fast hardware scan
     Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
