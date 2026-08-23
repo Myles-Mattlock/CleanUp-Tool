@@ -370,17 +370,13 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Fast Asynchronous Diagnostics with Hard 2-Second Timeout Protection
+# Asynchronous Diagnostics Worker with Explicit Datetime Handling
 function Request-AsyncDriveStats ($Queue) {
     $JobScript = {
         $Results = @()
         try {
-            # Option 1: Fast CIM Query with OperationTimeout
-            $CimOpt = New-CimSessionOption -Protocol Dcom
-            $CimSess = New-CimSession -Option $CimOpt -ErrorAction SilentlyContinue
-            
-            $Reliability = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
-            $Disks       = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+            $Reliability = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue
+            $Disks       = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
 
             foreach ($Disk in $Disks) {
                 $TempStr = "N/A"
@@ -394,11 +390,10 @@ function Request-AsyncDriveStats ($Queue) {
                     if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
                 }
 
-                # Mapping drive letters
                 $DiskIndex = $Disk.DeviceId
-                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
-                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -OperationTimeoutSec 2 -ErrorAction SilentlyContinue
+                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
                     foreach ($LogDisk in $LogicalDisks) {
                         if ($LogDisk.DeviceID) {
                             $Results += @{
@@ -422,19 +417,15 @@ function Request-AsyncDriveStats ($Queue) {
     
     $async = $ps.BeginInvoke()
     
-    # 2-Second Enforcement Dispatcher
-    $StartTime = [DateTime]::Now
+    # Non-blocking Poller
     $PollTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $PollTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+    $PollTimer.Interval = [TimeSpan]::FromMilliseconds(200)
     $PollTimer.Add_Tick({
-        $Elapsed = ([DateTime]::Now - $StartTime).TotalSeconds
-        if ($async.IsCompleted -or $Elapsed -ge 2.5) {
+        if ($async.IsCompleted) {
             $this.Stop()
             try {
-                if ($async.IsCompleted) {
-                    $Data = $ps.EndInvoke($async)
-                    if ($Data) { $Queue.Enqueue(@{ Type = "Stats"; Data = $Data }) }
-                }
+                $Data = $ps.EndInvoke($async)
+                if ($Data) { $Queue.Enqueue(@{ Type = "Stats"; Data = $Data }) }
                 $ps.Dispose(); $rs.Dispose()
             } catch {}
         }
