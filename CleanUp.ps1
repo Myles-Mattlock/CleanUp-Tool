@@ -373,8 +373,10 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
+    # GLOBAL INITIALIZATION QUEUE (Fixes null-valued expression error in Timer context)
+    $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+
     # ASYNCHRONOUS BACKGROUND STARTUP WORKER (Hardware Diagnostics & Updates)
-    $InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     $InitScript = {
         param($RepoName, $CurrentVersion, $InitQueue)
 
@@ -418,14 +420,14 @@ $Window.Add_Loaded({
     [void]$InitPS.AddScript($InitScript)
     [void]$InitPS.AddArgument($Global:RepoName)
     [void]$InitPS.AddArgument($Global:CurrentVersion)
-    [void]$InitPS.AddArgument($InitQueue)
+    [void]$InitPS.AddArgument($Global:InitQueue)
     $InitAsync = $InitPS.BeginInvoke()
 
     $InitTimer = New-Object System.Windows.Threading.DispatcherTimer
     $InitTimer.Interval = [TimeSpan]::FromMilliseconds(100)
     $InitTimer.Add_Tick({
         $item = $null
-        while ($InitQueue.TryDequeue([ref]$item)) {
+        while ($Global:InitQueue.TryDequeue([ref]$item)) {
             if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
             elseif ($item.Type -eq "Stats") {
                 $TxtDriveHealth.Text = $item.Health
