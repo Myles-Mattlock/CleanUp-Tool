@@ -376,34 +376,29 @@ function Request-AsyncDriveStats ($Queue) {
         param($Q)
         $Results = @()
         try {
-            # Pull WMI Storage Reliability counters
-            $Counters = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue
-            $Disks    = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
-
-            foreach ($Disk in $Disks) {
+            $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            foreach ($Disk in $PhysicalDisks) {
                 $TempStr = "N/A"
                 $HealthStr = "Healthy"
 
-                $Counter = $Counters | Where-Object { $_.DeviceId -eq $Disk.DeviceId } | Select-Object -First 1
-                if ($Counter) {
-                    $RawT = $Counter.Temperature
-                    if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
-                    if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
-                    if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
-                }
+                try {
+                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($Counter) {
+                        $RawT = $Counter.Temperature
+                        if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
+                        if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
+                        if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
+                    }
+                } catch {}
 
-                # Map disk index to drive letters via Partition WMI
-                $DiskIndex = $Disk.DeviceId
-                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
+                # Map Physical Disk Number to Volume Letters via Partitions
+                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
-                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
-                    foreach ($LogDisk in $LogicalDisks) {
-                        if ($LogDisk.DeviceID) {
-                            $Results += @{
-                                DriveLetter = "$($LogDisk.DeviceID):"
-                                Health      = $HealthStr
-                                Temp        = $TempStr
-                            }
+                    if ($Part.DriveLetter) {
+                        $Results += @{
+                            DriveLetter = "$($Part.DriveLetter):"
+                            Health      = $HealthStr
+                            Temp        = $TempStr
                         }
                     }
                 }
