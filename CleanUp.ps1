@@ -370,33 +370,43 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Multi-Drive Async Diagnostics Worker (Uses exact logic from your working script)
+# Multi-Drive Diagnostic Worker using exact Win32_DiskDrive -> Get-PhysicalDisk logic
 function Request-AsyncDriveStats ($Queue) {
     $Script = {
         param($Q)
         $StatsList = @()
 
         try {
-            $Disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            $Disks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
             foreach ($Disk in $Disks) {
                 $HealthText = "Healthy"; $TempText = "N/A"
                 
                 try {
-                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter) {
-                        if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
-                        if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
+                    $PhysDisk = Get-PhysicalDisk | Where-Object DeviceId -eq $Disk.Index -ErrorAction SilentlyContinue
+                    if ($PhysDisk) {
+                        $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                        if ($Counter) {
+                            if ($Counter.Temperature -gt 0) { $TempText = "$($Counter.Temperature) °C" }
+                            if ($null -ne $Counter.Wear) { $HealthText = "$(100 - $Counter.Wear)% Health" }
+                        }
                     }
                 } catch {}
 
-                # Map Physical Disk to Drive Letters
-                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+                # Match disk index to partition letters using standard WMI associators (fast and non-hanging)
+                $PartitionQuery = "ASSOCIATORS OF {Win32_DiskDrive.DeviceID='$($Disk.DeviceID.Replace('\','\\'))'} WHERE AssocClass = Win32_DiskDriveToDiskPartition"
+                $Partitions = Get-CimInstance -Query $PartitionQuery -ErrorAction SilentlyContinue
+                
                 foreach ($Part in $Partitions) {
-                    if ($Part.DriveLetter) {
-                        $StatsList += @{
-                            DriveLetter = "$($Part.DriveLetter):"
-                            Health      = $HealthText
-                            Temp        = $TempText
+                    $LogicalQuery = "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition"
+                    $LogicalDisks = Get-CimInstance -Query $LogicalQuery -ErrorAction SilentlyContinue
+                    
+                    foreach ($LogDisk in $LogicalDisks) {
+                        if ($LogDisk.DeviceID) {
+                            $StatsList += @{
+                                DriveLetter = "$($LogDisk.DeviceID)"
+                                Health      = $HealthText
+                                Temp        = $TempText
+                            }
                         }
                     }
                 }
@@ -454,7 +464,7 @@ $Window.Add_Loaded({
     $InitScript = {
         param($RepoName, $CurrentVersion, $InitQueue)
 
-        # 1. Initial SMART Hardware Check
+        # 1. Initial SMART Hardware Check Log
         try {
             Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
                 $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)" })
