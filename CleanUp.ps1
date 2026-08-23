@@ -4,7 +4,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
         Start-Process -FilePath $ExePath -Verb RunAs
     } else {
-        $ScriptPath = $PSCommandPath ?? $MyInvocation.MyCommand.Definition
+        $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
         Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
     }
     Exit
@@ -48,9 +48,13 @@ $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
-$CurrentDir = if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like "*.exe" -and [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -notlike "*powershell*") {
-    [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
-} else { $PSCommandPath ? (Split-Path -Parent $PSCommandPath) : (Get-Location) }
+if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like "*.exe" -and [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -notlike "*powershell*") {
+    $CurrentDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+} elseif ($PSCommandPath) {
+    $CurrentDir = Split-Path -Parent $PSCommandPath
+} else {
+    $CurrentDir = Get-Location
+}
 
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
@@ -389,7 +393,6 @@ $Window.Add_Loaded({
 
 # Async Execution Worker
 $BtnStart.Add_Click({
-    # If the cleanup session has already finished, clicking the button closes the application
     if ($BtnStart.Content -eq "Finished") {
         $Window.Close()
         return
