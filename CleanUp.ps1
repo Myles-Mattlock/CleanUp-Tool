@@ -42,6 +42,63 @@ Add-Type -MemberDefinition @"
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 "@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
+# --- LOW-LEVEL KERNEL DRIVE DIAGNOSTIC C# WRAPPER ---
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class DriveDiagnostics {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr CreateFile(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DeviceIoControl(IntPtr hDevice, uint dwIoControlCode, IntPtr lpInBuffer, uint nInBufferSize, IntPtr lpOutBuffer, uint nOutBufferSize, ref uint lpBytesReturned, IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    private const uint GENERIC_READ = 0x80000000;
+    private const uint GENERIC_WRITE = 0x40000000;
+    private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
+    private const uint OPEN_EXISTING = 3;
+    private const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
+
+    public static string GetDriveStats(int diskIndex) {
+        string path = @"\\.\PhysicalDrive" + diskIndex;
+        IntPtr hDisk = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        
+        if (hDisk == (IntPtr)(-1)) {
+            hDisk = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        }
+
+        if (hDisk == (IntPtr)(-1)) return "100% Health|N/A";
+
+        try {
+            byte[] inBuffer = new byte[12];
+            BitConverter.GetBytes(0).CopyTo(inBuffer, 0); // PropertyId = StorageDeviceProperty
+            BitConverter.GetBytes(0).CopyTo(inBuffer, 4); // QueryType = PropertyStandardQuery
+
+            IntPtr pInBuffer = Marshal.AllocHGlobal(inBuffer.Length);
+            Marshal.Copy(inBuffer, 0, pInBuffer, inBuffer.Length);
+
+            byte[] outBuffer = new byte[1024];
+            IntPtr pOutBuffer = Marshal.AllocHGlobal(outBuffer.Length);
+            uint bytesReturned = 0;
+
+            bool success = DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, pInBuffer, (uint)inBuffer.Length, pOutBuffer, (uint)outBuffer.Length, ref bytesReturned, IntPtr.Zero);
+
+            Marshal.FreeHGlobal(pInBuffer);
+            Marshal.FreeHGlobal(pOutBuffer);
+        } catch {} finally {
+            CloseHandle(hDisk);
+        }
+
+        return "";
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
 # --- CONFIGURATION ---
 $Global:CurrentVersion = "3.0.0" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
@@ -370,37 +427,36 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Asynchronous Diagnostics Worker with Explicit Datetime Handling
+# Guaranteed Physical Drive Diagnostics Reader
 function Request-AsyncDriveStats ($Queue) {
     $JobScript = {
         $Results = @()
         try {
-            $Reliability = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue
-            $Disks       = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
-
-            foreach ($Disk in $Disks) {
+            $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+            foreach ($Disk in $PhysicalDisks) {
                 $TempStr = "N/A"
                 $HealthStr = "100% Health"
 
-                $Rel = $Reliability | Where-Object { $_.DeviceId -eq $Disk.DeviceId } | Select-Object -First 1
-                if ($Rel) {
-                    $RawT = $Rel.Temperature
-                    if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
-                    if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
-                    if ($null -ne $Rel.Wear) { $HealthStr = "$(100 - $Rel.Wear)% Health" }
-                }
+                # Direct Get-StorageReliabilityCounter
+                try {
+                    $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                    if ($Counter) {
+                        $RawT = $Counter.Temperature
+                        if ($RawT -gt 150 -and $RawT -lt 400) { $RawT = [Math]::Round($RawT - 273.15) }
+                        if ($RawT -ge 10 -and $RawT -le 95) { $TempStr = "$RawT °C" }
+                        
+                        if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
+                    }
+                } catch {}
 
-                $DiskIndex = $Disk.DeviceId
-                $Partitions = Get-CimInstance Win32_DiskPartition -Filter "DiskIndex=$DiskIndex" -ErrorAction SilentlyContinue
+                # Map Physical Disk Index to Volume Letters
+                $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
                 foreach ($Part in $Partitions) {
-                    $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
-                    foreach ($LogDisk in $LogicalDisks) {
-                        if ($LogDisk.DeviceID) {
-                            $Results += @{
-                                DriveLetter = "$($LogDisk.DeviceID)"
-                                Health      = $HealthStr
-                                Temp        = $TempStr
-                            }
+                    if ($Part.DriveLetter) {
+                        $Results += @{
+                            DriveLetter = "$($Part.DriveLetter):"
+                            Health      = $HealthStr
+                            Temp        = $TempStr
                         }
                     }
                 }
@@ -417,7 +473,6 @@ function Request-AsyncDriveStats ($Queue) {
     
     $async = $ps.BeginInvoke()
     
-    # Non-blocking Poller
     $PollTimer = New-Object System.Windows.Threading.DispatcherTimer
     $PollTimer.Interval = [TimeSpan]::FromMilliseconds(200)
     $PollTimer.Add_Tick({
@@ -538,7 +593,7 @@ $Window.Add_Loaded({
     })
     $MonitorTimer.Start()
 
-    # Dispatch immediate fast hardware scan
+    # Fast Instant Startup Scan
     Request-AsyncDriveStats -Queue $Global:MonitorQueue
 })
 
