@@ -77,6 +77,24 @@ $CurrentDir = if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.F
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="StartButtonStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#444444"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="25">
@@ -199,30 +217,8 @@ $CurrentDir = if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.F
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
-            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
-                <Button.Style>
-                    <Style TargetType="Button">
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="Button">
-                                    <Border x:Name="border" Background="#007ACC" CornerRadius="6">
-                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="border" Property="Background" Value="#0098FF"/>
-                                        </Trigger>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter TargetName="border" Property="Background" Value="#444444"/>
-                                            <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </Button.Style>
-            </Button>
+            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" 
+                    Style="{StaticResource StartButtonStyle}" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
         </Grid>
     </Grid>
 </Window>
@@ -249,6 +245,10 @@ $BrushInactiveBG  = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushInactiveHvr = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3E3E42")
 $BrushActiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
 $BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
+
+# Finish Button Brushes
+$BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00FF66")
+$BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
 
@@ -399,7 +399,7 @@ $BtnStart.Add_Click({
     }
 
     $BtnStart.IsEnabled = $false; $BtnStart.Content = "Cleaning..."
-    $CleanProgress.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
+    $BtnStart.Background = $BrushActiveBG; $BtnStart.Foreground = $BrushActiveFG
     $CleanProgress.Value = 0; $TxtProgressPercent.Text = "0%"
     $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
 
@@ -453,7 +453,7 @@ $BtnStart.Add_Click({
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Recycle bin emptied."
         }
 
-        # 3. Disk Cleanup Utility (Strict Original Logic + Registry Flag Enforcer for Windows.old)
+        # 3. Disk Cleanup Utility
         if ($SelectedTasks.DoCleanmgr) {
             $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $StartPercent "Running Disk Cleanup Utility..."
@@ -525,8 +525,10 @@ $BtnStart.Add_Click({
             $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
             $TxtReclaimed.Text = $ReadableSpace
-            $BtnStart.IsEnabled = $true; $BtnStart.Content = "Finished"
-            $CleanProgress.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00FF66")
+            $BtnStart.IsEnabled = $true
+            $BtnStart.Content = "Finished"
+            $BtnStart.Background = $BrushFinishBG
+            $BtnStart.Foreground = $BrushFinishFG
             $InteractiveControls | ForEach-Object { $_.IsEnabled = $true }
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
