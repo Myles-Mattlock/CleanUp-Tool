@@ -370,20 +370,31 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
-# Fast Safe Diagnostic Fetcher (Never hangs UI)
+# Synchronous Multi-Drive Diagnostic Updater
 function Update-DriveHealthAndTemp {
     try {
         $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-        if ($PhysicalDisks) {
-            $Counter = $PhysicalDisks[0] | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-            if ($Counter) {
-                $TempStr = if ($Counter.Temperature -gt 0) { "$($Counter.Temperature) °C" } else { "N/A" }
-                $HealthStr = if ($null -ne $Counter.Wear) { "$(100 - $Counter.Wear)% Health" } else { "Healthy" }
-                
-                # Apply primary drive health to all detected rows reliably
-                foreach ($Key in $Global:DriveUIMap.Keys) {
-                    $Global:DriveUIMap[$Key].Health.Text = $HealthStr
-                    $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
+        foreach ($Disk in $PhysicalDisks) {
+            $TempStr = "N/A"
+            $HealthStr = "Healthy"
+
+            try {
+                $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+                if ($Counter) {
+                    if ($Counter.Temperature -gt 0) { $TempStr = "$($Counter.Temperature) °C" }
+                    if ($null -ne $Counter.Wear) { $HealthStr = "$(100 - $Counter.Wear)% Health" }
+                }
+            } catch {}
+
+            # Map PhysicalDisk to Drive Letters using Get-Partition
+            $Partitions = Get-Partition -DiskNumber $Disk.DiskNumber -ErrorAction SilentlyContinue
+            foreach ($Part in $Partitions) {
+                if ($Part.DriveLetter) {
+                    $Key = "$($Part.DriveLetter):"
+                    if ($Global:DriveUIMap.ContainsKey($Key)) {
+                        $Global:DriveUIMap[$Key].Health.Text = $HealthStr
+                        $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
+                    }
                 }
             }
         }
@@ -421,7 +432,7 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # Immediate non-blocking update for health/temp
+    # Immediate update for health/temp
     Update-DriveHealthAndTemp
 
     # GLOBAL INITIALIZATION QUEUE
