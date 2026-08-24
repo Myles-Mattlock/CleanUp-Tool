@@ -1,46 +1,40 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    NVME TELEMETRY DEBUG TEST (REFINED)" -ForegroundColor Cyan
+Write-Host "    SAFE STORAGE TELEMETRY FALLBACK TEST" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-# --- TEST 1: MSFT_PhysicalDisk StorageReliabilityCounter via CIM Direct ---
-Write-Host "`n[TEST 1] Querying CIM StorageReliabilityCounter per disk instance..." -ForegroundColor Yellow
+$DriveMap = @{}
 
-$PhysicalDisks = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_PhysicalDisk" -ErrorAction SilentlyContinue
-
-foreach ($Disk in $PhysicalDisks) {
-    Write-Host "`nDisk $($Disk.DeviceId) - $($Disk.FriendlyName):" -ForegroundColor Green
-    
-    # Query reliability counter associated with this specific disk object
-    $Counter = Get-CimInstance -Namespace "root\microsoft\windows\storage" -ClassName "MSFT_StorageReliabilityCounter" -ErrorAction SilentlyContinue | Where-Object { $_.DeviceId -eq $Disk.DeviceId }
-    
-    if ($Counter) {
-        Write-Host "  Raw Temperature: $($Counter.Temperature)" -ForegroundColor Cyan
-        Write-Host "  Wear Percentage: $($Counter.Wear)" -ForegroundColor Cyan
-        
-        # Calculate display strings
-        $TempStr = if ($Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) { "$($Counter.Temperature) °C" } else { "N/A" }
-        $HealthStr = if ($null -ne $Counter.Wear) { "$(100 - [int]$Counter.Wear)% Health" } else { "Healthy" }
-        
-        Write-Host "  => Health Display: $HealthStr" -ForegroundColor Green
-        Write-Host "  => Temp Display:   $TempStr" -ForegroundColor Green
-    } else {
-        Write-Host "  [!] No reliability counter found for DeviceId $($Disk.DeviceId)" -ForegroundColor Red
-    }
-}
-
-# --- TEST 2: MSFT_Disk / Storage Reliability via WMI Association ---
-Write-Host "`n`n[TEST 2] Checking StorageReliabilityCounter via WMI Associators..." -ForegroundColor Yellow
-Get-CimInstance Win32_DiskDrive | ForEach-Object {
+# Fetch physical drives and map health / temp cleanly
+Get-PhysicalDisk | ForEach-Object {
     $Disk = $_
-    Write-Host "`nWin32_DiskDrive Index $($Disk.Index) ($($Disk.Model)):" -ForegroundColor Green
-    
-    # Associate physical drive to logical partitions & drive letters
-    $Partitions = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskDrive.DeviceID='$($Disk.DeviceID.Replace('\','\\'))'} WHERE AssocClass = Win32_DiskDriveToDiskPartition" -ErrorAction SilentlyContinue
-    foreach ($Part in $Partitions) {
-        $LogicalDisks = Get-CimInstance -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($Part.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition" -ErrorAction SilentlyContinue
-        foreach ($LogDisk in $LogicalDisks) {
-            Write-Host "  ===> Volume Letter: [$($LogDisk.DeviceID)]" -ForegroundColor Cyan
+    $HealthDisplay = if ($Disk.HealthStatus -eq "Healthy") { "Healthy" } else { $Disk.HealthStatus }
+    $TempDisplay   = "N/A"
+
+    # Try reading counter if available
+    try {
+        $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+        if ($Counter) {
+            if ($Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) {
+                $TempDisplay = "$($Counter.Temperature) °C"
+            }
+            if ($null -ne $Counter.Wear) {
+                $HealthDisplay = "$(100 - [int]$Counter.Wear)% Health"
+            }
+        }
+    } catch {}
+
+    # Map physical disk to drive letters using Get-Disk & Get-Partition
+    $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
+    if ($DiskObj) {
+        $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
+        foreach ($Part in $Partitions) {
+            if ($Part.DriveLetter) {
+                $Letter = "$($Part.DriveLetter):"
+                Write-Host "`nFound Drive [$Letter] on Physical Disk $($Disk.DeviceId) ($($Disk.FriendlyName))" -ForegroundColor Green
+                Write-Host "  Mapped Health: $HealthDisplay" -ForegroundColor Yellow
+                Write-Host "  Mapped Temp:   $TempDisplay" -ForegroundColor Yellow
+            }
         }
     }
 }
