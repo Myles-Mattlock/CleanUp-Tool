@@ -99,7 +99,7 @@ $HexMuted = "#888888"
                                 <Viewbox x:Name="SpinnerBox" Width="16" Height="16" Margin="0,0,8,0" Visibility="Collapsed">
                                     <Canvas Width="24" Height="24">
                                         <Path Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2Z" Stroke="#44FFFFFF" StrokeThickness="3"/>
-                                        <Path Data="M12,2A10,10 0 0,1 22,12" Stroke="#FFFFFF" StrokeThickness="3" StrokeLineCap="Round"/>
+                                        <Path Data="M12,2A10,10 0 0,1 22,12" Stroke="#FFFFFF" StrokeThickness="3"/>
                                         <Canvas.RenderTransform>
                                             <RotateTransform x:Name="SpinnerRotate" Angle="0" CenterX="12" CenterY="12"/>
                                         </Canvas.RenderTransform>
@@ -265,7 +265,8 @@ $Global:IsUpdatingProfile = $false
 $Global:DriveUIMap = @{}
 
 # --- SPINNER ANIMATION CONTROLS ---
-$SpinAnimation = New-Object System.Windows.Media.Animation.DoubleAnimation -Property @(0, 360, [System.Windows.Duration]::new([TimeSpan]::FromSeconds(1)))
+$Duration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1))
+$SpinAnimation = New-Object System.Windows.Media.Animation.DoubleAnimation (0, 360, $Duration)
 $SpinAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
 
 function Start-ButtonSpinner {
