@@ -1,6 +1,6 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    DIRECT NVME KERNEL TELEMETRY TEST" -ForegroundColor Cyan
+Write-Host "    EXACT NVME PROTOCOL LOG PAGE TEST" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 $Code = @"
@@ -8,7 +8,7 @@ using System;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-public class NVMeReader {
+public class NVMeDirect {
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     public static extern SafeFileHandle CreateFile(
         string lpFileName, uint dwDesiredAccess, uint dwShareMode,
@@ -22,66 +22,93 @@ public class NVMeReader {
         IntPtr lpOutBuffer, uint nOutBufferSize,
         ref uint lpBytesReturned, IntPtr lpOverlapped);
 
-    public class DriveStats {
-        public int TemperatureC = -1;
-        public int HealthPercent = -1;
-        public string Error = "";
+    [StructLayout(LayoutKind.Sequential)]
+    public struct STORAGE_PROPERTY_QUERY {
+        public uint PropertyId;
+        public uint QueryType;
+        public uint AdditionalParameters;
     }
 
-    public static DriveStats GetNVMeStats(int driveIndex) {
-        DriveStats stats = new DriveStats();
+    [StructLayout(LayoutKind.Sequential)]
+    public struct STORAGE_PROTOCOL_SPECIFIC_DATA {
+        public uint ProtocolType;
+        public uint DataType;
+        public uint ProtocolDataValue;
+        public uint ProtocolDataSubValue;
+        public uint ProtocolDataOffset;
+        public uint ProtocolDataLength;
+        public uint FixedProtocolReturnData;
+        public uint Reserved;
+    }
+
+    public class NVMeResult {
+        public int TempC = -1;
+        public int HealthPercent = -1;
+        public string StatusMsg = "";
+    }
+
+    public static NVMeResult ReadSmart(int driveIndex) {
+        NVMeResult res = new NVMeResult();
         string path = @"\\.\PhysicalDrive" + driveIndex;
-        
+
         SafeFileHandle hDevice = CreateFile(path, 0x80000000 | 0x40000000, 1 | 2, IntPtr.Zero, 3, 0, IntPtr.Zero);
         if (hDevice.IsInvalid) {
             hDevice = CreateFile(path, 0, 1 | 2, IntPtr.Zero, 3, 0, IntPtr.Zero);
         }
-        
+
         if (hDevice.IsInvalid) {
-            stats.Error = "Access Denied / Driver Lock";
-            return stats;
+            res.StatusMsg = "Access Denied / Handle Invalid (Win32 Error: " + Marshal.GetLastWin32Error() + ")";
+            return res;
         }
 
-        // IOCTL_STORAGE_QUERY_PROPERTY = 0x2D1400
-        byte[] inBuffer = new byte[12];
-        BitConverter.GetBytes(0x06).CopyTo(inBuffer, 0); // PropertyId = StorageDeviceProtocolSpecificProperty
-        BitConverter.GetBytes(0x00).CopyTo(inBuffer, 4); // QueryType = PropertyStandardQuery
-        BitConverter.GetBytes(0x02).CopyTo(inBuffer, 8); // ProtocolType = ProtocolTypeNvme
+        int querySize = Marshal.SizeOf(typeof(STORAGE_PROPERTY_QUERY)) + Marshal.SizeOf(typeof(STORAGE_PROTOCOL_SPECIFIC_DATA));
+        byte[] buffer = new byte[querySize + 512];
 
-        byte[] outBuffer = new byte[4096];
+        // STORAGE_PROPERTY_QUERY: PropertyId = 50 (StorageDeviceProtocolSpecificProperty), QueryType = 0
+        BitConverter.GetBytes(50).CopyTo(buffer, 0);
+        BitConverter.GetBytes(0).CopyTo(buffer, 4);
+
+        // STORAGE_PROTOCOL_SPECIFIC_DATA: ProtocolType = 3 (NVMe), DataType = 2 (LogPage), Value = 2 (HealthInfo)
+        int offset = Marshal.SizeOf(typeof(STORAGE_PROPERTY_QUERY));
+        BitConverter.GetBytes(3).CopyTo(buffer, offset);       // ProtocolTypeNvme
+        BitConverter.GetBytes(2).CopyTo(buffer, offset + 4);   // NVMeDataTypeLogPage
+        BitConverter.GetBytes(2).CopyTo(buffer, offset + 8);   // NVME_LOG_PAGE_HEALTH_INFO
+        BitConverter.GetBytes(0).CopyTo(buffer, offset + 12);  // SubValue
+        BitConverter.GetBytes(40).CopyTo(buffer, offset + 16); // DataOffset
+        BitConverter.GetBytes(512).CopyTo(buffer, offset + 20);// DataLength
+
+        IntPtr pBuffer = Marshal.AllocHGlobal(buffer.Length);
+        Marshal.Copy(buffer, 0, pBuffer, buffer.Length);
+
         uint bytesReturned = 0;
+        bool success = DeviceIoControl(hDevice, 0x2D1400, pBuffer, (uint)buffer.Length, pBuffer, (uint)buffer.Length, ref bytesReturned, IntPtr.Zero);
 
-        IntPtr pIn = Marshal.AllocHGlobal(inBuffer.Length);
-        IntPtr pOut = Marshal.AllocHGlobal(outBuffer.Length);
+        if (success) {
+            byte[] outBytes = new byte[bytesReturned];
+            Marshal.Copy(pBuffer, outBytes, 0, (int)bytesReturned);
 
-        Marshal.Copy(inBuffer, 0, pIn, inBuffer.Length);
+            int dataOffset = 48;
+            if (outBytes.Length >= dataOffset + 512) {
+                ushort kelvin = BitConverter.ToUInt16(outBytes, dataOffset + 1);
+                byte wear = outBytes[dataOffset + 5];
 
-        bool success = DeviceIoControl(hDevice, 0x2D1400, pIn, (uint)inBuffer.Length, pOut, (uint)outBuffer.Length, ref bytesReturned, IntPtr.Zero);
-
-        if (success && bytesReturned > 0) {
-            Marshal.Copy(pOut, outBuffer, 0, (int)bytesReturned);
-            
-            // SMART Data payload offset check
-            for (int i = 0; i < (int)bytesReturned - 512; i++) {
-                // Read Kelvin Temperature at offset
-                ushort kelvin = BitConverter.ToUInt16(outBuffer, i + 1);
-                byte wear = outBuffer[i + 5];
-
-                if (kelvin >= 273 && kelvin <= 373 && wear <= 100) {
-                    stats.TemperatureC = kelvin - 273;
-                    stats.HealthPercent = 100 - wear;
-                    break;
+                if (kelvin > 200 && kelvin < 400) {
+                    res.TempC = kelvin - 273;
                 }
+                if (wear <= 100) {
+                    res.HealthPercent = 100 - wear;
+                }
+                res.StatusMsg = "OK";
+            } else {
+                res.StatusMsg = "Returned buffer too short (" + bytesReturned + " bytes)";
             }
         } else {
-            stats.Error = "IOCTL Failed (Error Code " + Marshal.GetLastWin32Error() + ")";
+            res.StatusMsg = "DeviceIoControl failed (Error: " + Marshal.GetLastWin32Error() + ")";
         }
 
-        Marshal.FreeHGlobal(pIn);
-        Marshal.FreeHGlobal(pOut);
+        Marshal.FreeHGlobal(pBuffer);
         hDevice.Close();
-
-        return stats;
+        return res;
     }
 }
 "@
@@ -90,20 +117,22 @@ Add-Type -TypeDefinition $Code -ErrorAction SilentlyContinue
 
 0..1 | ForEach-Object {
     $DiskIndex = $_
-    Write-Host "`nTesting NVMe Kernel Query on PhysicalDrive$DiskIndex..." -ForegroundColor Yellow
-    
-    $Stats = [NVMeReader]::GetNVMeStats($DiskIndex)
-    
-    if ($Stats.TemperatureC -gt 0) {
-        Write-Host "  [SUCCESS] Temperature: $($Stats.TemperatureC) °C" -ForegroundColor Green
+    $DiskObj = Get-PhysicalDisk | Where-Object DeviceId -eq $DiskIndex -ErrorAction SilentlyContinue
+    $Name = if ($DiskObj) { $DiskObj.FriendlyName } else { "PhysicalDrive$DiskIndex" }
+
+    Write-Host "`nTesting NVMe Admin Log Page Query on [$DiskIndex] $Name..." -ForegroundColor Yellow
+    $Result = [NVMeDirect]::ReadSmart($DiskIndex)
+
+    if ($Result.TempC -gt 0) {
+        Write-Host "  [SUCCESS] Temperature: $($Result.TempC) °C" -ForegroundColor Green
     } else {
-        Write-Host "  [FAIL] Temperature: Could not read ($($Stats.Error))" -ForegroundColor Red
+        Write-Host "  [FAIL] Temperature: N/A ($($Result.StatusMsg))" -ForegroundColor Red
     }
 
-    if ($Stats.HealthPercent -ge 0) {
-        Write-Host "  [SUCCESS] Health:      $($Stats.HealthPercent)% Health" -ForegroundColor Green
+    if ($Result.HealthPercent -ge 0) {
+        Write-Host "  [SUCCESS] Health:      $($Result.HealthPercent)% Health" -ForegroundColor Green
     } else {
-        Write-Host "  [FAIL] Health:         Could not read ($($Stats.Error))" -ForegroundColor Red
+        Write-Host "  [FAIL] Health:         N/A ($($Result.StatusMsg))" -ForegroundColor Red
     }
 }
 
