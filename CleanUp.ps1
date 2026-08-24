@@ -85,7 +85,7 @@ $HexMuted = "#888888"
                                     <RepeatButton Command="Slider.DecreaseLarge">
                                         <RepeatButton.Template>
                                             <ControlTemplate>
-                                                <Border CornerRadius="4">
+                                                <Border x:Name="FillBorder" CornerRadius="4">
                                                     <Border.Background>
                                                         <LinearGradientBrush x:Name="ShimmerBrush" StartPoint="0,0" EndPoint="1,0">
                                                             <GradientStop Color="#007ACC" Offset="0.0"/>
@@ -327,8 +327,12 @@ function Start-ProgressBarShimmer {
     $Track = $Template.FindName("PART_Track", $CleanProgress)
     if ($Track -and $Track.DecreaseRepeatButton) {
         $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $FillBorder = $DecTemplate.FindName("FillBorder", $Track.DecreaseRepeatButton)
         $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
-        if ($ShimmerBrush) {
+        
+        if ($FillBorder -and $ShimmerBrush) {
+            # Restore LinearGradientBrush for active animation
+            $FillBorder.Background = $ShimmerBrush
             $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $ShimmerAnimation)
         }
     }
@@ -339,9 +343,16 @@ function Stop-ProgressBarShimmer {
     $Track = $Template.FindName("PART_Track", $CleanProgress)
     if ($Track -and $Track.DecreaseRepeatButton) {
         $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $FillBorder = $DecTemplate.FindName("FillBorder", $Track.DecreaseRepeatButton)
         $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
+        
         if ($ShimmerBrush) {
+            # Stop animation timeline
             $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $null)
+        }
+        if ($FillBorder) {
+            # Solid color fill on completion to eliminate gradient white block
+            $FillBorder.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
         }
     }
 }
@@ -565,7 +576,7 @@ function Update-DriveHealthAndTemp {
                 if ($Json.power_cycle_count) {
                     $CyclesStr = "$($Json.power_cycle_count)"
                 } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
-                    $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
+                    $CyclesStr = "$($Json.power_cycle_count)"
                 }
 
                 # Unsafe Shutdowns (White)
@@ -899,7 +910,7 @@ $BtnStart.Add_Click({
             $this.Stop()
             try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
 
-            # Stop Animations
+            # Stop Animations & Convert Fill to Solid Accent Color
             Stop-ButtonSpinner
             Stop-ProgressBarShimmer
             $CleanProgress.Value = 100
