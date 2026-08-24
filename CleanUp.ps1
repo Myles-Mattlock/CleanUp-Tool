@@ -36,73 +36,6 @@ Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor G
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
-# --- NATIVE NVME SMART KERNEL READER ASSEMBLY ---
-if (-not ([System.Management.Automation.PSTypeName]'NVMeSmartReader').Type) {
-    $NVMeCode = @"
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-
-public class NVMeSmartReader {
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    public static extern SafeFileHandle CreateFile(
-        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
-        IntPtr lpSecurityAttributes, uint dwCreationDisposition,
-        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool DeviceIoControl(
-        SafeFileHandle hDevice, uint dwIoControlCode,
-        IntPtr lpInBuffer, uint nInBufferSize,
-        IntPtr lpOutBuffer, uint nOutBufferSize,
-        ref uint lpBytesReturned, IntPtr lpOverlapped);
-
-    public static int GetNVMePercentageUsed(int diskIndex) {
-        string path = @"\\.\PhysicalDrive" + diskIndex;
-        SafeFileHandle hDevice = CreateFile(path, 0x80000000 | 0x40000000, 1 | 2, IntPtr.Zero, 3, 0, IntPtr.Zero);
-        if (hDevice.IsInvalid) {
-            hDevice = CreateFile(path, 0, 1 | 2, IntPtr.Zero, 3, 0, IntPtr.Zero);
-        }
-        if (hDevice.IsInvalid) return -1;
-
-        byte[] buffer = new byte[4096];
-        BitConverter.GetBytes(50).CopyTo(buffer, 0); 
-        BitConverter.GetBytes(0).CopyTo(buffer, 4);  
-        BitConverter.GetBytes(3).CopyTo(buffer, 8);  
-        BitConverter.GetBytes(2).CopyTo(buffer, 12); 
-        BitConverter.GetBytes(2).CopyTo(buffer, 16); 
-        BitConverter.GetBytes(40).CopyTo(buffer, 24); 
-        BitConverter.GetBytes(512).CopyTo(buffer, 28); 
-
-        IntPtr pBuf = Marshal.AllocHGlobal(buffer.Length);
-        Marshal.Copy(buffer, 0, pBuf, buffer.Length);
-
-        uint bytesReturned = 0;
-        bool success = DeviceIoControl(hDevice, 0x2D1400, pBuf, (uint)buffer.Length, pBuf, (uint)buffer.Length, ref bytesReturned, IntPtr.Zero);
-
-        int healthPercent = -1;
-        if (success && bytesReturned >= 512) {
-            byte[] outData = new byte[bytesReturned];
-            Marshal.Copy(pBuf, outData, 0, (int)bytesReturned);
-
-            for (int i = 0; i < outData.Length - 512; i++) {
-                byte percentageUsed = outData[i + 48 + 5];
-                if (percentageUsed <= 100) {
-                    healthPercent = 100 - percentageUsed;
-                    break;
-                }
-            }
-        }
-
-        Marshal.FreeHGlobal(pBuf);
-        hDevice.Close();
-        return healthPercent;
-    }
-}
-"@
-    Add-Type -TypeDefinition $NVMeCode
-}
-
 # --- NATIVE WINDOW DWM COLORING ---
 Add-Type -MemberDefinition @"
     [DllImport("dwmapi.dll")]
@@ -402,6 +335,41 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
 }
 
+function Get-SmartctlData ($DiskIndex) {
+    # Dynamically find smartctl in PATH, Winget default directory, or local folder
+    $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    if (-not $SmartctlPath) {
+        $Candidates = @(
+            (Join-Path $CurrentDir "smartctl.exe"),
+            "C:\Program Files\smartmontools\bin\smartctl.exe",
+            "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
+        )
+        foreach ($Path in $Candidates) {
+            if (Test-Path $Path) { $SmartctlPath = $Path; break }
+        }
+    }
+
+    if (-not $SmartctlPath) { return $null }
+
+    try {
+        $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
+            FileName               = $SmartctlPath
+            Arguments              = "-j -a /dev/pd$DiskIndex"
+            UseShellExecute        = $false
+            RedirectStandardOutput = $true
+            CreateNoWindow         = $true
+        }
+        $p = [System.Diagnostics.Process]::Start($ProcessInfo)
+        $Output = $p.StandardOutput.ReadToEnd()
+        $p.WaitForExit()
+
+        if (-not [string]::IsNullOrWhiteSpace($Output)) {
+            return ($Output | ConvertFrom-Json)
+        }
+    } catch {}
+    return $null
+}
+
 function Update-DriveHealthAndTemp {
     try {
         $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
@@ -409,24 +377,30 @@ function Update-DriveHealthAndTemp {
             $TempStr = "N/A"
             $HealthStr = "Healthy"
 
-            # 1. Direct NVMe Byte 05 Query for internal NVMe drives
-            $DirectHealth = [NVMeSmartReader]::GetNVMePercentageUsed($Disk.DeviceId)
-            if ($DirectHealth -ge 0) {
-                $HealthStr = "$DirectHealth% Health"
+            # 1. Query smartctl JSON
+            $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
+
+            if ($Json) {
+                # Extract Temperature
+                if ($Json.temperature.current) {
+                    $TempStr = "$($Json.temperature.current) °C"
+                } elseif ($Json.nvme_smart_health_information_log.temperature) {
+                    $TempStr = "$($Json.nvme_smart_health_information_log.temperature) °C"
+                }
+
+                # Extract Wear / Health Percentage
+                if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
+                    $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
+                    $HealthStr = "$(100 - $Used)% Health"
+                } elseif ($Json.smart_status.passed -eq $true) {
+                    $HealthStr = "100% Health"
+                }
             } else {
-                # Fallback to standard status for USB enclosures / legacy drives
+                # Fallback to standard Windows status if smartctl fails or is missing
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
             }
 
-            # 2. Temperature check via standard Windows Storage API
-            try {
-                $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                if ($Counter -and $Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) {
-                    $TempStr = "$($Counter.Temperature) °C"
-                }
-            } catch {}
-
-            # Map Physical Disk Number to Volume Drive Letters
+            # 2. Map Physical Disk Number to Volume Drive Letters
             $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
             if ($DiskObj) {
                 $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
