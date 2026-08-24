@@ -17,11 +17,11 @@ while ($true) {
                 Write-Warning "ALERT: Drive [$($disk.FriendlyName)] reached ${currentTemp}°C!"
                 
                 # Audible alert tones
-                for ($i = 0; $i -lt 4; $i++) {
-                    [Console]::Beep(1200, 150)
-                    Start-Sleep -Milliseconds 5
-                    [Console]::Beep(800, 150)
-                    Start-Sleep -Milliseconds 5
+                for ($i = 0; $i -lt 5; $i++) {
+                    [Console]::Beep(1800, 150)
+                    Start-Sleep -Milliseconds 50
+                    [Console]::Beep(1500, 150)
+                    Start-Sleep -Milliseconds 50
                 }
             }
         }
