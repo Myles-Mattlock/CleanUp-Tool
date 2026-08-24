@@ -310,15 +310,25 @@ $Global:IsUpdatingProfile = $false
 $Global:HasAlertedHighTemp = $false
 $Global:DriveUIMap = @{}
 
-# --- HIGH TEMPERATURE SOUND EFFECT ---
+# --- HIGH TEMPERATURE SOUND EFFECT (WITH MULTI-BACKEND FALLBACK) ---
 function Play-TempAlertSound {
     [System.Threading.Tasks.Task]::Run([System.Action]{
-        for ($i = 0; $i -lt 4; $i++) {
-            [Console]::Beep(1200, 150)
-            Start-Sleep -Milliseconds 50
-            [Console]::Beep(800, 150)
-            Start-Sleep -Milliseconds 50
-        }
+        try {
+            # Try console tones first
+            for ($i = 0; $i -lt 4; $i++) {
+                [Console]::Beep(1200, 150)
+                Start-Sleep -Milliseconds 50
+                [Console]::Beep(800, 150)
+                Start-Sleep -Milliseconds 50
+            }
+        } catch {}
+        
+        # Windows System Audio Fallback
+        try {
+            [System.Media.SystemSounds]::Hand.Play()
+            Start-Sleep -Milliseconds 250
+            [System.Media.SystemSounds]::Exclamation.Play()
+        } catch {}
     }) | Out-Null
 }
 
