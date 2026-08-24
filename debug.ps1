@@ -3,17 +3,31 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "    SMARTCTL JSON TELEMETRY DEBUG TEST" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
+# Find smartctl across local folders, Winget install path, and System PATH
 $CurrentDir = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { Get-Location }
-$SmartctlPath = Join-Path $CurrentDir "smartctl.exe"
+$SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
 
-if (-not (Test-Path $SmartctlPath)) {
-    Write-Host "[!] ERROR: smartctl.exe not found in $CurrentDir" -ForegroundColor Red
+if (-not $SmartctlPath) {
+    $Candidates = @(
+        (Join-Path $CurrentDir "smartctl.exe"),
+        "C:\Program Files\smartmontools\bin\smartctl.exe",
+        "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
+    )
+    foreach ($Path in $Candidates) {
+        if (Test-Path $Path) { $SmartctlPath = $Path; break }
+    }
+}
+
+if (-not $SmartctlPath) {
+    Write-Host "[!] ERROR: smartctl.exe could not be located." -ForegroundColor Red
     Exit
 }
 
+Write-Host "Found smartctl at: $SmartctlPath`n" -ForegroundColor Gray
+
 Get-PhysicalDisk | ForEach-Object {
     $Disk = $_
-    Write-Host "`nTesting Physical Disk [$($Disk.DeviceId)] - $($Disk.FriendlyName)..." -ForegroundColor Yellow
+    Write-Host "Testing Physical Disk [$($Disk.DeviceId)] - $($Disk.FriendlyName)..." -ForegroundColor Yellow
 
     try {
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
