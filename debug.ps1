@@ -19,9 +19,9 @@ while ($true) {
                 # Audible alert tones
                 for ($i = 0; $i -lt 4; $i++) {
                     [Console]::Beep(1200, 150)
-                    Start-Sleep -Milliseconds 50
+                    Start-Sleep -Milliseconds 5
                     [Console]::Beep(800, 150)
-                    Start-Sleep -Milliseconds 50
+                    Start-Sleep -Milliseconds 5
                 }
             }
         }
