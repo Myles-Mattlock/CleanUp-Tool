@@ -1,15 +1,13 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    SMARTCTL JSON TELEMETRY DEBUG TEST" -ForegroundColor Cyan
+Write-Host "    NVME THERMAL & THROTTLE TELEMETRY TEST" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-# Find smartctl across local folders, Winget install path, and System PATH
-$CurrentDir = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { Get-Location }
+# Locate smartctl in PATH, Winget directory, or current folder
 $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-
 if (-not $SmartctlPath) {
     $Candidates = @(
-        (Join-Path $CurrentDir "smartctl.exe"),
+        (Join-Path $PSScriptRoot "smartctl.exe"),
         "C:\Program Files\smartmontools\bin\smartctl.exe",
         "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
     )
@@ -19,15 +17,14 @@ if (-not $SmartctlPath) {
 }
 
 if (-not $SmartctlPath) {
-    Write-Host "[!] ERROR: smartctl.exe could not be located." -ForegroundColor Red
+    Write-Host "[!] ERROR: smartctl.exe could not be found." -ForegroundColor Red
     Exit
 }
 
-Write-Host "Found smartctl at: $SmartctlPath`n" -ForegroundColor Gray
-
 Get-PhysicalDisk | ForEach-Object {
     $Disk = $_
-    Write-Host "Testing Physical Disk [$($Disk.DeviceId)] - $($Disk.FriendlyName)..." -ForegroundColor Yellow
+    Write-Host "`n--------------------------------------------------" -ForegroundColor Gray
+    Write-Host "Disk [$($Disk.DeviceId)] - $($Disk.FriendlyName)" -ForegroundColor Green
 
     try {
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
@@ -43,31 +40,42 @@ Get-PhysicalDisk | ForEach-Object {
 
         if (-not [string]::IsNullOrWhiteSpace($Output)) {
             $Json = $Output | ConvertFrom-Json
-            
-            # Extract Temp
-            $TempStr = "N/A"
-            if ($Json.temperature.current) {
-                $TempStr = "$($Json.temperature.current) °C"
-            } elseif ($Json.nvme_smart_health_information_log.temperature) {
-                $TempStr = "$($Json.nvme_smart_health_information_log.temperature) °C"
-            }
+            $Log = $Json.nvme_smart_health_information_log
 
-            # Extract Wear / Health
-            $HealthStr = "Healthy"
-            if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
-                $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
-                $HealthStr = "$(100 - $Used)% Health"
-            } elseif ($Json.smart_status.passed -eq $true) {
-                $HealthStr = "100% Health"
-            }
+            if ($Log) {
+                # Current Temp
+                $CurrentTemp = $Log.temperature
+                Write-Host "  Current Temperature:          $CurrentTemp °C" -ForegroundColor Yellow
 
-            Write-Host "  [SUCCESS] Parsed Health: $HealthStr" -ForegroundColor Green
-            Write-Host "  [SUCCESS] Parsed Temp:   $TempStr" -ForegroundColor Green
-        } else {
-            Write-Host "  [FAIL] smartctl returned empty output." -ForegroundColor Red
+                # Thermal Throttle Counters
+                $WarnTime = $Log.warning_composite_temperature_time
+                $CritTime = $Log.critical_composite_temperature_time
+
+                if ($null -ne $WarnTime) {
+                    $WarnColor = if ($WarnTime -gt 0) { "Red" } else { "Cyan" }
+                    Write-Host "  Warning Thermal Throttle Time: $WarnTime Minutes" -ForegroundColor $WarnColor
+                }
+                if ($null -ne $CritTime) {
+                    $CritColor = if ($CritTime -gt 0) { "Red" } else { "Cyan" }
+                    Write-Host "  Critical Thermal Throttle Time:$CritTime Minutes" -ForegroundColor $CritColor
+                }
+
+                # Health & Spare Check
+                if ($null -ne $Log.available_spare) {
+                    Write-Host "  Available Reserve Spare:      $($Log.available_spare)%" -ForegroundColor Cyan
+                }
+            } else {
+                # SATA / Non-NVMe Fallback Display
+                $Temp = $Json.temperature.current
+                if ($Temp) {
+                    Write-Host "  Current Temperature (SATA):   $Temp °C" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  [!] Thermal counters not supported on this interface/drive." -ForegroundColor DarkGray
+                }
+            }
         }
     } catch {
-        Write-Host "  [FAIL] Error executing smartctl: $_" -ForegroundColor Red
+        Write-Host "  [!] Error parsing drive telemetry: $_" -ForegroundColor Red
     }
 }
 
