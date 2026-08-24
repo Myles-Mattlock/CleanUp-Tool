@@ -71,6 +71,51 @@ $HexMuted = "#888888"
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
+        <!-- Custom Shimmer Progress Bar Style -->
+        <Style x:Key="ShimmerProgressBarStyle" TargetType="ProgressBar">
+            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid x:Name="TemplateRoot">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border CornerRadius="4">
+                                                    <Border.Background>
+                                                        <LinearGradientBrush x:Name="ShimmerBrush" StartPoint="0,0" EndPoint="1,0">
+                                                            <GradientStop Color="#007ACC" Offset="0.0"/>
+                                                            <GradientStop Color="#660098FF" Offset="0.4"/>
+                                                            <GradientStop Color="#FFFFFF" Offset="0.5"/>
+                                                            <GradientStop Color="#660098FF" Offset="0.6"/>
+                                                            <GradientStop Color="#007ACC" Offset="1.0"/>
+                                                        </LinearGradientBrush>
+                                                    </Border.Background>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ProfileButtonStyle" TargetType="Button">
             <Setter Property="Template">
                 <Setter.Value>
@@ -217,7 +262,7 @@ $HexMuted = "#888888"
 
         <!-- Progress Bar with Percentage Overlay -->
         <Grid Grid.Row="5" Height="18" Margin="0,15,0,15">
-            <ProgressBar x:Name="CleanProgress" Foreground="#007ACC" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
+            <ProgressBar x:Name="CleanProgress" Style="{StaticResource ShimmerProgressBarStyle}" Value="0" Maximum="100"/>
             <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
 
@@ -264,10 +309,42 @@ $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $Global:IsUpdatingProfile = $false
 $Global:DriveUIMap = @{}
 
-# --- SPINNER ANIMATION CONTROLS ---
+# --- ANIMATION CONTROLS ---
 $Duration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1))
 $SpinAnimation = New-Object System.Windows.Media.Animation.DoubleAnimation (0, 360, $Duration)
 $SpinAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+
+# Progress Bar Shimmer Brush Sweep Animation
+$ShimmerDuration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1.5))
+$ShimmerAnimation = New-Object System.Windows.Media.Animation.PointAnimation
+$ShimmerAnimation.From = New-Object System.Windows.Point (-1, 0)
+$ShimmerAnimation.To = New-Object System.Windows.Point (2, 0)
+$ShimmerAnimation.Duration = $ShimmerDuration
+$ShimmerAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+
+function Start-ProgressBarShimmer {
+    $Template = $CleanProgress.Template
+    $Track = $Template.FindName("PART_Track", $CleanProgress)
+    if ($Track -and $Track.DecreaseRepeatButton) {
+        $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
+        if ($ShimmerBrush) {
+            $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $ShimmerAnimation)
+        }
+    }
+}
+
+function Stop-ProgressBarShimmer {
+    $Template = $CleanProgress.Template
+    $Track = $Template.FindName("PART_Track", $CleanProgress)
+    if ($Track -and $Track.DecreaseRepeatButton) {
+        $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
+        if ($ShimmerBrush) {
+            $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $null)
+        }
+    }
+}
 
 function Start-ButtonSpinner {
     $Template = $BtnStart.Template
@@ -693,9 +770,9 @@ $BtnStart.Add_Click({
     $BtnStart.Background = $BrushActiveBG
     $BtnStart.Foreground = $BrushActiveFG
     
-    # Start Button Spinner & Progress Bar Animation
+    # Start Animations (Spinner & Linear Gradient Progress Bar Sweep)
     Start-ButtonSpinner
-    $CleanProgress.IsIndeterminate = $true
+    Start-ProgressBarShimmer
     $CleanProgress.Value = 0
     $TxtProgressPercent.Text = "0%"
     $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
@@ -822,9 +899,9 @@ $BtnStart.Add_Click({
             $this.Stop()
             try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
 
-            # Stop Spinner Animation and Reset Progress Bar
+            # Stop Animations
             Stop-ButtonSpinner
-            $CleanProgress.IsIndeterminate = $false
+            Stop-ProgressBarShimmer
             $CleanProgress.Value = 100
 
             $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
