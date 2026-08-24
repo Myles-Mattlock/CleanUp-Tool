@@ -409,16 +409,16 @@ function Update-DriveHealthAndTemp {
             $TempStr = "N/A"
             $HealthStr = "Healthy"
 
-            # 1. Direct NVMe Byte 05 Query (Reads 98% accurately on Samsung PM991a)
+            # 1. Direct NVMe Byte 05 Query for internal NVMe drives
             $DirectHealth = [NVMeSmartReader]::GetNVMePercentageUsed($Disk.DeviceId)
             if ($DirectHealth -ge 0) {
                 $HealthStr = "$DirectHealth% Health"
             } else {
-                # Fallback to standard status for USB enclosures
+                # Fallback to standard status for USB enclosures / legacy drives
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
             }
 
-            # 2. Temperature check
+            # 2. Temperature check via standard Windows Storage API
             try {
                 $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
                 if ($Counter -and $Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) {
