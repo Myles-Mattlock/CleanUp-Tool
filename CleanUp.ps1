@@ -369,6 +369,7 @@ function Get-SmartctlData ($DiskIndex) {
 
     if (-not $SmartctlPath) { return $null }
 
+    $p = $null
     try {
         $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
             FileName               = $SmartctlPath
@@ -385,6 +386,12 @@ function Get-SmartctlData ($DiskIndex) {
             return ($Output | ConvertFrom-Json)
         }
     } catch {}
+    finally {
+        if ($null -ne $p) {
+            $p.Close()
+            $p.Dispose()
+        }
+    }
     return $null
 }
 
@@ -555,7 +562,7 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # Immediate non-blocking update trigger via DispatcherTimer (100ms delay to let GUI draw first)
+    # Non-blocking update trigger via DispatcherTimer (100ms delay)
     $StartTelemetryTimer = New-Object System.Windows.Threading.DispatcherTimer
     $StartTelemetryTimer.Interval = [TimeSpan]::FromMilliseconds(100)
     $StartTelemetryTimer.Add_Tick({
@@ -643,6 +650,9 @@ $BtnStart.Add_Click({
 
     $BtnStart.IsEnabled = $false; $BtnStart.Content = "Cleaning..."
     $BtnStart.Background = $BrushActiveBG; $BtnStart.Foreground = $BrushActiveFG
+    
+    # Trigger Marquee Animation Shimmer during cleaning
+    $CleanProgress.IsIndeterminate = $true
     $CleanProgress.Value = 0; $TxtProgressPercent.Text = "0%"
     $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
 
@@ -657,6 +667,7 @@ $BtnStart.Add_Click({
         function Send-Progress ($val, $status) { $ProgressQueue.Enqueue(@{ Value = $val; Status = $status }) }
 
         function Invoke-SilentProcess ($FileName, $Arguments) {
+            $p = $null
             try {
                 $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
                     FileName = $FileName; Arguments = $Arguments; UseShellExecute = $false
@@ -667,8 +678,11 @@ $BtnStart.Add_Click({
                     $line = $p.StandardOutput.ReadLine()
                     if ($line) { Send-Log $line.Trim() }
                 }
-                $p.WaitForExit(); $p.Close()
+                $p.WaitForExit()
             } catch { Send-Log "Task ($FileName) finished." }
+            finally {
+                if ($null -ne $p) { $p.Close(); $p.Dispose() }
+            }
         }
 
         $TotalTasks = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
@@ -763,6 +777,10 @@ $BtnStart.Add_Click({
 
             $this.Stop()
             try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
+
+            # Turn off animation shimmer on complete
+            $CleanProgress.IsIndeterminate = $false
+            $CleanProgress.Value = 100
 
             $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
             $EndFreeSpace = $DriveC.AvailableFreeSpace
