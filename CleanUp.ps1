@@ -289,7 +289,6 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Grid = New-Object System.Windows.Controls.Grid
     $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
 
-    # 6 Stat Cards per row with spacing columns
     0..5 | ForEach-Object {
         $col = New-Object System.Windows.Controls.ColumnDefinition
         $col.Width = [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star)
@@ -324,8 +323,7 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
         return @{ Border = $Border; Text = $TVal }
     }
 
-    # Column Mapping: 0, 2, 4, 6, 8, 10
-    $CardSpace    = Create-Card "DRIVE ($DriveLetter) FREE" InitialFreeText "#FFFFFF" 0
+    $CardSpace    = Create-Card "DRIVE SPACE ($DriveLetter)" $InitialFreeText "#FFFFFF" 0
     $CardHealth   = Create-Card "HEALTH" "Healthy" "#00E5FF" 2
     $CardTemp     = Create-Card "TEMP" "N/A" "#FFCC00" 4
     $CardHours    = Create-Card "POWER HOURS" "N/A" "#A3E635" 6
@@ -350,7 +348,6 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
 }
 
 function Get-SmartctlData ($DiskIndex) {
-    # Dynamically find smartctl in PATH, Winget default directory, or local folder
     $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
     if (-not $SmartctlPath) {
         $Candidates = @(
