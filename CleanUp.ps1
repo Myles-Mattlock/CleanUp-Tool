@@ -37,7 +37,8 @@ Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor G
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- NATIVE NVME SMART KERNEL READER ASSEMBLY ---
-$NVMeCode = @"
+if (-not ([System.Management.Automation.PSTypeName]'NVMeSmartReader').Type) {
+    $NVMeCode = @"
 using System;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -99,7 +100,8 @@ public class NVMeSmartReader {
     }
 }
 "@
-Add-Type -TypeDefinition $NVMeCode -ErrorAction SilentlyContinue
+    Add-Type -TypeDefinition $NVMeCode
+}
 
 # --- NATIVE WINDOW DWM COLORING ---
 Add-Type -MemberDefinition @"
