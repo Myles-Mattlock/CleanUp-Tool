@@ -307,7 +307,20 @@ $BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
+$Global:HasAlertedHighTemp = $false
 $Global:DriveUIMap = @{}
+
+# --- HIGH TEMPERATURE SOUND EFFECT ---
+function Play-TempAlertSound {
+    [System.Threading.Tasks.Task]::Run([System.Action]{
+        for ($i = 0; $i -lt 4; $i++) {
+            [Console]::Beep(1200, 150)
+            Start-Sleep -Milliseconds 50
+            [Console]::Beep(800, 150)
+            Start-Sleep -Milliseconds 50
+        }
+    }) | Out-Null
+}
 
 # --- ANIMATION CONTROLS ---
 $Duration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1))
@@ -331,7 +344,6 @@ function Start-ProgressBarShimmer {
         $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
         
         if ($FillBorder -and $ShimmerBrush) {
-            # Restore LinearGradientBrush for active animation
             $FillBorder.Background = $ShimmerBrush
             $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $ShimmerAnimation)
         }
@@ -347,11 +359,9 @@ function Stop-ProgressBarShimmer {
         $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
         
         if ($ShimmerBrush) {
-            # Stop animation timeline
             $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $null)
         }
         if ($FillBorder) {
-            # Solid color fill on completion to eliminate gradient white block
             $FillBorder.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
         }
     }
@@ -525,6 +535,8 @@ function Get-SmartctlData ($DiskIndex) {
 function Update-DriveHealthAndTemp {
     try {
         $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+        $IsHighTempDetected = $false
+
         foreach ($Disk in $PhysicalDisks) {
             $TempStr = "N/A"; $TempHex = $HexGreen
             $HealthStr = "Healthy"; $HealthHex = $HexGreen
@@ -536,7 +548,7 @@ function Update-DriveHealthAndTemp {
             $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
 
             if ($Json) {
-                # Temperature Evaluation
+                # Temperature Evaluation (Green -> Amber -> Red)
                 $RawTemp = $null
                 if ($Json.temperature.current) {
                     $RawTemp = [int]$Json.temperature.current
@@ -546,7 +558,10 @@ function Update-DriveHealthAndTemp {
 
                 if ($null -ne $RawTemp) {
                     $TempStr = "$RawTemp °C"
-                    if ($RawTemp -ge 70) { $TempHex = $HexRed }
+                    if ($RawTemp -ge 70) {
+                        $TempHex = $HexRed
+                        $IsHighTempDetected = $true
+                    }
                     elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
                     else { $TempHex = $HexGreen }
                 }
@@ -576,7 +591,7 @@ function Update-DriveHealthAndTemp {
                 if ($Json.power_cycle_count) {
                     $CyclesStr = "$($Json.power_cycle_count)"
                 } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
-                    $CyclesStr = "$($Json.power_cycle_count)"
+                    $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
                 }
 
                 # Unsafe Shutdowns (White)
@@ -619,6 +634,17 @@ function Update-DriveHealthAndTemp {
                     }
                 }
             }
+        }
+
+        # 3. Sound Alarm Trigger (Triggers once when reaching 70°C+)
+        if ($IsHighTempDetected) {
+            if (-not $Global:HasAlertedHighTemp) {
+                $Global:HasAlertedHighTemp = $true
+                Play-TempAlertSound
+                Write-GuiLog "[!] ALERT: High disk temperature detected (>= 70°C)!"
+            }
+        } else {
+            $Global:HasAlertedHighTemp = $false
         }
     } catch {}
 }
