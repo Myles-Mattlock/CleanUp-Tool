@@ -60,7 +60,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="860" Width="960" 
+        Title="Myles Mattlock CleanUp Tool" Height="920" Width="1000" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
@@ -289,13 +289,14 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
     $Grid = New-Object System.Windows.Controls.Grid
     $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
 
-    0..2 | ForEach-Object {
+    # 6 Stat Cards per row with spacing columns
+    0..5 | ForEach-Object {
         $col = New-Object System.Windows.Controls.ColumnDefinition
-        $col.Width = if ($_ -eq 0) { [System.Windows.GridLength]::new(1.2, [System.Windows.GridUnitType]::Star) } else { [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star) }
+        $col.Width = [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star)
         [void]$Grid.ColumnDefinitions.Add($col)
-        if ($_ -lt 2) {
+        if ($_ -lt 5) {
             $spaceCol = New-Object System.Windows.Controls.ColumnDefinition
-            $spaceCol.Width = [System.Windows.GridLength]::new(15, [System.Windows.GridUnitType]::Pixel)
+            $spaceCol.Width = [System.Windows.GridLength]::new(8, [System.Windows.GridUnitType]::Pixel)
             [void]$Grid.ColumnDefinitions.Add($spaceCol)
         }
     }
@@ -304,16 +305,16 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
         $Border = New-Object System.Windows.Controls.Border
         $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
         $Border.CornerRadius = New-Object System.Windows.CornerRadius(6)
-        $Border.Padding = New-Object System.Windows.Thickness(12)
+        $Border.Padding = New-Object System.Windows.Thickness(8, 10, 8, 10)
         [System.Windows.Controls.Grid]::SetColumn($Border, $ColIdx)
 
         $Stack = New-Object System.Windows.Controls.StackPanel
         $TTitle = New-Object System.Windows.Controls.TextBlock
-        $TTitle.Text = $Title; $TTitle.FontSize = 11; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
+        $TTitle.Text = $Title; $TTitle.FontSize = 10; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
         $TTitle.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#888888")
 
         $TVal = New-Object System.Windows.Controls.TextBlock
-        $TVal.Text = $ValText; $TVal.FontSize = 16; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
+        $TVal.Text = $ValText; $TVal.FontSize = 14; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
         $TVal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($FgHex)
         $TVal.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
 
@@ -323,16 +324,29 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
         return @{ Border = $Border; Text = $TVal }
     }
 
-    $CardSpace  = Create-Card "DRIVE ($DriveLetter) INITIAL FREE" $InitialFreeText "#FFFFFF" 0
-    $CardHealth = Create-Card "DRIVE ($DriveLetter) HEALTH" "Healthy" "#00E5FF" 2
-    $CardTemp   = Create-Card "DRIVE ($DriveLetter) TEMP" "N/A" "#FFCC00" 4
+    # Column Mapping: 0, 2, 4, 6, 8, 10
+    $CardSpace    = Create-Card "DRIVE ($DriveLetter) FREE" InitialFreeText "#FFFFFF" 0
+    $CardHealth   = Create-Card "HEALTH" "Healthy" "#00E5FF" 2
+    $CardTemp     = Create-Card "TEMP" "N/A" "#FFCC00" 4
+    $CardHours    = Create-Card "POWER HOURS" "N/A" "#A3E635" 6
+    $CardCycles   = Create-Card "POWER CYCLES" "N/A" "#C084FC" 8
+    $CardShutdown = Create-Card "UNSAFE SHUTDOWN" "N/A" "#F87171" 10
 
     [void]$Grid.Children.Add($CardSpace.Border)
     [void]$Grid.Children.Add($CardHealth.Border)
     [void]$Grid.Children.Add($CardTemp.Border)
+    [void]$Grid.Children.Add($CardHours.Border)
+    [void]$Grid.Children.Add($CardCycles.Border)
+    [void]$Grid.Children.Add($CardShutdown.Border)
 
     [void]$DriveStatsPanel.Children.Add($Grid)
-    $Global:DriveUIMap[$DriveLetter] = @{ Health = $CardHealth.Text; Temp = $CardTemp.Text }
+    $Global:DriveUIMap[$DriveLetter] = @{ 
+        Health   = $CardHealth.Text; 
+        Temp     = $CardTemp.Text;
+        Hours    = $CardHours.Text;
+        Cycles   = $CardCycles.Text;
+        Unsafe   = $CardShutdown.Text
+    }
 }
 
 function Get-SmartctlData ($DiskIndex) {
@@ -376,27 +390,51 @@ function Update-DriveHealthAndTemp {
         foreach ($Disk in $PhysicalDisks) {
             $TempStr = "N/A"
             $HealthStr = "Healthy"
+            $HoursStr = "N/A"
+            $CyclesStr = "N/A"
+            $UnsafeStr = "N/A"
 
             # 1. Query smartctl JSON
             $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
 
             if ($Json) {
-                # Extract Temperature
+                # Temperature
                 if ($Json.temperature.current) {
                     $TempStr = "$($Json.temperature.current) °C"
                 } elseif ($Json.nvme_smart_health_information_log.temperature) {
                     $TempStr = "$($Json.nvme_smart_health_information_log.temperature) °C"
                 }
 
-                # Extract Wear / Health Percentage
+                # Wear / Health Percentage
                 if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
                     $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
                     $HealthStr = "$(100 - $Used)% Health"
                 } elseif ($Json.smart_status.passed -eq $true) {
                     $HealthStr = "100% Health"
                 }
+
+                # Power-On Hours
+                if ($Json.power_on_time.hours) {
+                    $HoursStr = "$($Json.power_on_time.hours) hrs"
+                } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
+                    $HoursStr = "$($Json.nvme_smart_health_information_log.power_on_hours) hrs"
+                }
+
+                # Power Cycles
+                if ($Json.power_cycle_count) {
+                    $CyclesStr = "$($Json.power_cycle_count)"
+                } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
+                    $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
+                }
+
+                # Unsafe Shutdowns
+                if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
+                    $UnsafeStr = "$($Json.nvme_smart_health_information_log.unsafe_shutdowns)"
+                } else {
+                    $Attr = $Json.ata_smart_attributes.table | Where-Object { $_.id -eq 192 -or $_.name -like "*Unsafe_Shutdown*" }
+                    if ($Attr) { $UnsafeStr = "$($Attr.raw.value)" }
+                }
             } else {
-                # Fallback to standard Windows status if smartctl fails or is missing
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
             }
 
@@ -410,6 +448,9 @@ function Update-DriveHealthAndTemp {
                         if ($Global:DriveUIMap.ContainsKey($Key)) {
                             $Global:DriveUIMap[$Key].Health.Text = $HealthStr
                             $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
+                            $Global:DriveUIMap[$Key].Hours.Text  = $HoursStr
+                            $Global:DriveUIMap[$Key].Cycles.Text = $CyclesStr
+                            $Global:DriveUIMap[$Key].Unsafe.Text = $UnsafeStr
                         }
                     }
                 }
@@ -484,7 +525,7 @@ $Window.Add_Loaded({
 
     Write-GuiLog "System Cleanup Initialized."
 
-    # Immediate update for health/temp
+    # Immediate update for health/temp/hours/cycles/unsafe
     Update-DriveHealthAndTemp
 
     # GLOBAL INITIALIZATION QUEUE
