@@ -37,7 +37,8 @@ Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor G
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # --- NATIVE NVME SMART KERNEL READER ASSEMBLY ---
-$NVMeCode = @"
+if (-not ([System.Management.Automation.PSTypeName]'NVMeSmartReader').Type) {
+    $NVMeCode = @"
 using System;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -99,7 +100,8 @@ public class NVMeSmartReader {
     }
 }
 "@
-Add-Type -TypeDefinition $NVMeCode -ErrorAction SilentlyContinue
+    Add-Type -TypeDefinition $NVMeCode
+}
 
 # --- NATIVE WINDOW DWM COLORING ---
 Add-Type -MemberDefinition @"
@@ -407,16 +409,16 @@ function Update-DriveHealthAndTemp {
             $TempStr = "N/A"
             $HealthStr = "Healthy"
 
-            # 1. Direct NVMe Byte 05 Query (Reads 98% accurately on Samsung PM991a)
+            # 1. Direct NVMe Byte 05 Query for internal NVMe drives
             $DirectHealth = [NVMeSmartReader]::GetNVMePercentageUsed($Disk.DeviceId)
             if ($DirectHealth -ge 0) {
                 $HealthStr = "$DirectHealth% Health"
             } else {
-                # Fallback to standard status for USB enclosures
+                # Fallback to standard status for USB enclosures / legacy drives
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
             }
 
-            # 2. Temperature check
+            # 2. Temperature check via standard Windows Storage API
             try {
                 $Counter = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
                 if ($Counter -and $Counter.Temperature -gt 0 -and $Counter.Temperature -lt 120) {
