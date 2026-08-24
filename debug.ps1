@@ -1,13 +1,13 @@
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "    NVME THERMAL & THROTTLE TELEMETRY TEST" -ForegroundColor Cyan
+Write-Host "    SSD LIFETIME & POWER METRICS INSPECTOR" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-# Locate smartctl in PATH, Winget directory, or current folder
+# Locate smartctl in system PATH, Winget directory, or current folder
 $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
 if (-not $SmartctlPath) {
     $Candidates = @(
-        (Join-Path $PSScriptRoot "smartctl.exe"),
+        ".\smartctl.exe",
         "C:\Program Files\smartmontools\bin\smartctl.exe",
         "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
     )
@@ -21,15 +21,16 @@ if (-not $SmartctlPath) {
     Exit
 }
 
+$Results = @()
+
 Get-PhysicalDisk | ForEach-Object {
     $Disk = $_
-    Write-Host "`n--------------------------------------------------" -ForegroundColor Gray
-    Write-Host "Disk [$($Disk.DeviceId)] - $($Disk.FriendlyName)" -ForegroundColor Green
+    $DiskIndex = $Disk.DeviceId
 
     try {
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
             FileName               = $SmartctlPath
-            Arguments              = "-j -a /dev/pd$($Disk.DeviceId)"
+            Arguments              = "-j -a /dev/pd$DiskIndex"
             UseShellExecute        = $false
             RedirectStandardOutput = $true
             CreateNoWindow         = $true
@@ -40,43 +41,47 @@ Get-PhysicalDisk | ForEach-Object {
 
         if (-not [string]::IsNullOrWhiteSpace($Output)) {
             $Json = $Output | ConvertFrom-Json
-            $Log = $Json.nvme_smart_health_information_log
 
-            if ($Log) {
-                # Current Temp
-                $CurrentTemp = $Log.temperature
-                Write-Host "  Current Temperature:          $CurrentTemp °C" -ForegroundColor Yellow
+            # Default values if metric is missing
+            $PowerHours    = "N/A"
+            $PowerCycles   = "N/A"
+            $UnsafeShutdowns = "N/A"
 
-                # Thermal Throttle Counters
-                $WarnTime = $Log.warning_composite_temperature_time
-                $CritTime = $Log.critical_composite_temperature_time
+            # 1. Power On Hours (Handles NVMe and SATA JSON schemas)
+            if ($Json.power_on_time.hours) {
+                $PowerHours = $Json.power_on_time.hours
+            } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
+                $PowerHours = $Json.nvme_smart_health_information_log.power_on_hours
+            }
 
-                if ($null -ne $WarnTime) {
-                    $WarnColor = if ($WarnTime -gt 0) { "Red" } else { "Cyan" }
-                    Write-Host "  Warning Thermal Throttle Time: $WarnTime Minutes" -ForegroundColor $WarnColor
-                }
-                if ($null -ne $CritTime) {
-                    $CritColor = if ($CritTime -gt 0) { "Red" } else { "Cyan" }
-                    Write-Host "  Critical Thermal Throttle Time:$CritTime Minutes" -ForegroundColor $CritColor
-                }
+            # 2. Power Cycles
+            if ($Json.power_cycle_count) {
+                $PowerCycles = $Json.power_cycle_count
+            } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
+                $PowerCycles = $Json.nvme_smart_health_information_log.power_cycles
+            }
 
-                # Health & Spare Check
-                if ($null -ne $Log.available_spare) {
-                    Write-Host "  Available Reserve Spare:      $($Log.available_spare)%" -ForegroundColor Cyan
-                }
+            # 3. Unsafe Shutdowns (NVMe Health Log attribute 0xD)
+            if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
+                $UnsafeShutdowns = $Json.nvme_smart_health_information_log.unsafe_shutdowns
             } else {
-                # SATA / Non-NVMe Fallback Display
-                $Temp = $Json.temperature.current
-                if ($Temp) {
-                    Write-Host "  Current Temperature (SATA):   $Temp °C" -ForegroundColor Yellow
-                } else {
-                    Write-Host "  [!] Thermal counters not supported on this interface/drive." -ForegroundColor DarkGray
-                }
+                # SATA ATA Attribute Check (ID 192 / 0xC0 or ID 241)
+                $Attr = $Json.ata_smart_attributes.table | Where-Object { $_.id -eq 192 -or $_.name -like "*Unsafe_Shutdown*" }
+                if ($Attr) { $UnsafeShutdowns = $Attr.raw.value }
+            }
+
+            $Results += [PSCustomObject]@{
+                "Disk Index"       = "Disk $DiskIndex"
+                "Model"            = $Disk.FriendlyName
+                "Power-On Hours"   = "$PowerHours hrs"
+                "Power Cycles"     = $PowerCycles
+                "Unsafe Shutdowns" = $UnsafeShutdowns
             }
         }
-    } catch {
-        Write-Host "  [!] Error parsing drive telemetry: $_" -ForegroundColor Red
-    }
+    } catch {}
 }
 
-Write-Host "`n==================================================" -ForegroundColor Cyan
+# Output formatted table
+$Results | Format-Table -AutoSize
+
+Write-Host "==================================================" -ForegroundColor Cyan
