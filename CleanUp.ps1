@@ -56,6 +56,12 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
     $CurrentDir = Get-Location
 }
 
+# Color Constants
+$HexGreen = "#4ADE80"
+$HexAmber = "#FACC15"
+$HexRed   = "#F87171"
+$HexWhite = "#FFFFFF"
+
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -323,12 +329,12 @@ function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
         return @{ Border = $Border; Text = $TVal }
     }
 
-    $CardSpace    = Create-Card "DRIVE SPACE ($DriveLetter)" $InitialFreeText "#FFFFFF" 0
-    $CardHealth   = Create-Card "HEALTH" "Healthy" "#00E5FF" 2
-    $CardTemp     = Create-Card "TEMP" "N/A" "#FFCC00" 4
-    $CardHours    = Create-Card "POWER HOURS" "N/A" "#A3E635" 6
-    $CardCycles   = Create-Card "POWER CYCLES" "N/A" "#C084FC" 8
-    $CardShutdown = Create-Card "UNSAFE SHUTDOWN" "N/A" "#F87171" 10
+    $CardSpace    = Create-Card "DRIVE SPACE ($DriveLetter)" $InitialFreeText $HexWhite 0
+    $CardHealth   = Create-Card "HEALTH" "Healthy" $HexGreen 2
+    $CardTemp     = Create-Card "TEMP" "N/A" $HexGreen 4
+    $CardHours    = Create-Card "POWER HOURS" "N/A" $HexWhite 6
+    $CardCycles   = Create-Card "POWER CYCLES" "N/A" $HexWhite 8
+    $CardShutdown = Create-Card "UNSAFE SHUTDOWN" "N/A" $HexWhite 10
 
     [void]$Grid.Children.Add($CardSpace.Border)
     [void]$Grid.Children.Add($CardHealth.Border)
@@ -385,8 +391,8 @@ function Update-DriveHealthAndTemp {
     try {
         $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
         foreach ($Disk in $PhysicalDisks) {
-            $TempStr = "N/A"
-            $HealthStr = "Healthy"
+            $TempStr = "N/A"; $TempHex = $HexGreen
+            $HealthStr = "Healthy"; $HealthHex = $HexGreen
             $HoursStr = "N/A"
             $CyclesStr = "N/A"
             $UnsafeStr = "N/A"
@@ -395,41 +401,60 @@ function Update-DriveHealthAndTemp {
             $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
 
             if ($Json) {
-                # Temperature
+                # --- Temperature Evaluation (Green -> Amber -> Red) ---
+                $RawTemp = $null
                 if ($Json.temperature.current) {
-                    $TempStr = "$($Json.temperature.current) °C"
+                    $RawTemp = [int]$Json.temperature.current
                 } elseif ($Json.nvme_smart_health_information_log.temperature) {
-                    $TempStr = "$($Json.nvme_smart_health_information_log.temperature) °C"
+                    $RawTemp = [int]$Json.nvme_smart_health_information_log.temperature
                 }
 
-                # Wear / Health Percentage
+                if ($null -ne $RawTemp) {
+                    $TempStr = "$RawTemp °C"
+                    if ($RawTemp -ge 70) { $TempHex = $HexRed }
+                    elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
+                    else { $TempHex = $HexGreen }
+                }
+
+                # --- Health / Wear Evaluation (Green -> Amber -> Red) ---
                 if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
                     $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
-                    $HealthStr = "$(100 - $Used)% Health"
+                    $HealthVal = 100 - $Used
+                    $HealthStr = "$HealthVal% Health"
+
+                    if ($HealthVal -lt 70) { $HealthHex = $HexRed }
+                    elseif ($HealthVal -lt 90) { $HealthHex = $HexAmber }
+                    else { $HealthHex = $HexGreen }
                 } elseif ($Json.smart_status.passed -eq $true) {
                     $HealthStr = "100% Health"
+                    $HealthHex = $HexGreen
                 }
 
-                # Power-On Hours
+                # --- Power-On Hours (White) ---
                 if ($Json.power_on_time.hours) {
                     $HoursStr = "$($Json.power_on_time.hours) hrs"
                 } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
                     $HoursStr = "$($Json.nvme_smart_health_information_log.power_on_hours) hrs"
                 }
 
-                # Power Cycles
+                # --- Power Cycles (White) ---
                 if ($Json.power_cycle_count) {
                     $CyclesStr = "$($Json.power_cycle_count)"
                 } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
                     $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
                 }
 
-                # Unsafe Shutdowns
+                # --- Unsafe Shutdowns (White) ---
+                $RawUnsafe = $null
                 if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
-                    $UnsafeStr = "$($Json.nvme_smart_health_information_log.unsafe_shutdowns)"
+                    $RawUnsafe = [int]$Json.nvme_smart_health_information_log.unsafe_shutdowns
                 } else {
                     $Attr = $Json.ata_smart_attributes.table | Where-Object { $_.id -eq 192 -or $_.name -like "*Unsafe_Shutdown*" }
-                    if ($Attr) { $UnsafeStr = "$($Attr.raw.value)" }
+                    if ($Attr) { $RawUnsafe = [int]$Attr.raw.value }
+                }
+
+                if ($null -ne $RawUnsafe) {
+                    $UnsafeStr = "$RawUnsafe"
                 }
             } else {
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
@@ -443,11 +468,15 @@ function Update-DriveHealthAndTemp {
                     if ($Part.DriveLetter) {
                         $Key = "$($Part.DriveLetter):"
                         if ($Global:DriveUIMap.ContainsKey($Key)) {
-                            $Global:DriveUIMap[$Key].Health.Text = $HealthStr
-                            $Global:DriveUIMap[$Key].Temp.Text   = $TempStr
-                            $Global:DriveUIMap[$Key].Hours.Text  = $HoursStr
-                            $Global:DriveUIMap[$Key].Cycles.Text = $CyclesStr
-                            $Global:DriveUIMap[$Key].Unsafe.Text = $UnsafeStr
+                            $Global:DriveUIMap[$Key].Health.Text       = $HealthStr
+                            $Global:DriveUIMap[$Key].Health.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HealthHex)
+
+                            $Global:DriveUIMap[$Key].Temp.Text         = $TempStr
+                            $Global:DriveUIMap[$Key].Temp.Foreground   = [System.Windows.Media.BrushConverter]::new().ConvertFromString($TempHex)
+
+                            $Global:DriveUIMap[$Key].Hours.Text        = $HoursStr
+                            $Global:DriveUIMap[$Key].Cycles.Text       = $CyclesStr
+                            $Global:DriveUIMap[$Key].Unsafe.Text       = $UnsafeStr
                         }
                     }
                 }
