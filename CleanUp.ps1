@@ -94,20 +94,32 @@ $HexMuted = "#888888"
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
+                                <!-- Loading Spinner Canvas -->
+                                <Viewbox x:Name="SpinnerBox" Width="16" Height="16" Margin="0,0,8,0" Visibility="Collapsed">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2Z" Stroke="#44FFFFFF" StrokeThickness="3"/>
+                                        <Path Data="M12,2A10,10 0 0,1 22,12" Stroke="#FFFFFF" StrokeThickness="3" StrokeLineCap="Round"/>
+                                        <Canvas.RenderTransform>
+                                            <RotateTransform x:Name="SpinnerRotate" Angle="0" CenterX="12" CenterY="12"/>
+                                        </Canvas.RenderTransform>
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock x:Name="BtnText" Text="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
                                     <Condition Property="IsMouseOver" Value="True"/>
-                                    <Condition Property="Content" Value="Start Cleanup"/>
+                                    <Condition Property="Tag" Value="Ready"/>
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="border" Property="Background" Value="#0098FF"/>
                             </MultiTrigger>
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
                                     <Condition Property="IsMouseOver" Value="True"/>
-                                    <Condition Property="Content" Value="Finished"/>
+                                    <Condition Property="Tag" Value="Finished"/>
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="border" Property="Background" Value="#33FF88"/>
                             </MultiTrigger>
@@ -216,7 +228,7 @@ $HexMuted = "#888888"
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
-            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" 
+            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Tag="Ready" Width="160" Height="42" 
                     Style="{StaticResource StartButtonStyle}" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
         </Grid>
     </Grid>
@@ -251,6 +263,32 @@ $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 
 $Global:IsUpdatingProfile = $false
 $Global:DriveUIMap = @{}
+
+# --- SPINNER ANIMATION CONTROLS ---
+$SpinAnimation = New-Object System.Windows.Media.Animation.DoubleAnimation -Property @(0, 360, [System.Windows.Duration]::new([TimeSpan]::FromSeconds(1)))
+$SpinAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+
+function Start-ButtonSpinner {
+    $Template = $BtnStart.Template
+    $SpinnerBox = $Template.FindName("SpinnerBox", $BtnStart)
+    $SpinnerRotate = $Template.FindName("SpinnerRotate", $BtnStart)
+
+    if ($SpinnerBox -and $SpinnerRotate) {
+        $SpinnerBox.Visibility = [System.Windows.Visibility]::Visible
+        $SpinnerRotate.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $SpinAnimation)
+    }
+}
+
+function Stop-ButtonSpinner {
+    $Template = $BtnStart.Template
+    $SpinnerBox = $Template.FindName("SpinnerBox", $BtnStart)
+    $SpinnerRotate = $Template.FindName("SpinnerRotate", $BtnStart)
+
+    if ($SpinnerBox -and $SpinnerRotate) {
+        $SpinnerBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $SpinnerRotate.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+    }
+}
 
 # --- GLOBAL FUNCTIONS ---
 function Write-GuiLog ($Message) {
@@ -648,12 +686,17 @@ $BtnStart.Add_Click({
         $TxtStatus.Text = "Please select at least one task to run."; return
     }
 
-    $BtnStart.IsEnabled = $false; $BtnStart.Content = "Cleaning..."
-    $BtnStart.Background = $BrushActiveBG; $BtnStart.Foreground = $BrushActiveFG
+    $BtnStart.IsEnabled = $false
+    $BtnStart.Content = "Cleaning..."
+    $BtnStart.Tag = "Cleaning"
+    $BtnStart.Background = $BrushActiveBG
+    $BtnStart.Foreground = $BrushActiveFG
     
-    # Trigger Marquee Animation Shimmer during cleaning
+    # Start Button Spinner & Progress Bar Animation
+    Start-ButtonSpinner
     $CleanProgress.IsIndeterminate = $true
-    $CleanProgress.Value = 0; $TxtProgressPercent.Text = "0%"
+    $CleanProgress.Value = 0
+    $TxtProgressPercent.Text = "0%"
     $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
 
     $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
@@ -778,7 +821,8 @@ $BtnStart.Add_Click({
             $this.Stop()
             try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
 
-            # Turn off animation shimmer on complete
+            # Stop Spinner Animation and Reset Progress Bar
+            Stop-ButtonSpinner
             $CleanProgress.IsIndeterminate = $false
             $CleanProgress.Value = 100
 
@@ -790,6 +834,7 @@ $BtnStart.Add_Click({
             $TxtReclaimed.Text = $ReadableSpace
             $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
+            $BtnStart.Tag = "Finished"
             $BtnStart.Background = $BrushFinishBG
             $BtnStart.Foreground = $BrushFinishFG
             $InteractiveControls | ForEach-Object { $_.IsEnabled = $true }
