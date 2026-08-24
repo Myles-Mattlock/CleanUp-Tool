@@ -390,8 +390,8 @@ function Get-SmartctlData ($DiskIndex) {
 }
 
 function Update-DriveHealthAndTemp {
-    # Offload process execution completely to an asynchronous Task Thread
-    [System.Threading.Tasks.Task]::Run({
+    # Offload process execution completely to an asynchronous Task Thread with explicit Action cast
+    [System.Threading.Tasks.Task]::Run([System.Action]{
         try {
             $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
             foreach ($Disk in $PhysicalDisks) {
