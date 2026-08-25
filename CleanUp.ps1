@@ -312,8 +312,8 @@ $Global:DriveUIMap = @{}
 
 # --- HIGH TEMPERATURE ALERT TONE FUNCTION ---
 function Play-TempAlertSound {
-    for ($i = 0; $i -lt 4; $i++) {
-        [Console]::Beep(1200, 150)
+    for ($i = 0; $i -lt 20; $i++) {
+        [Console]::Beep(1500, 150)
         Start-Sleep -Milliseconds 50
         [Console]::Beep(800, 150)
         Start-Sleep -Milliseconds 50
