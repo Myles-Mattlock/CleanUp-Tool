@@ -32,7 +32,7 @@ Write-Host "         ▀███▄ ══════════════�
 Write-Host "           ▀████▄                ▄████▀         " -ForegroundColor $Teal
 Write-Host "             ▀██████████████████████▀           " -ForegroundColor $Teal
 Write-Host "                ▀▀▀████████████▀▀▀              " -ForegroundColor $Teal
-Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor Gray
+Write-Host "`n Starting Myles Mattlock System CleanUp GUI...`n" -ForegroundColor Gray
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
@@ -67,7 +67,7 @@ $HexMuted = "#888888"
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="920" Width="1000" 
+        Title="Myles Mattlock System CleanUp" Height="920" Width="1000" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
     <Window.Resources>
