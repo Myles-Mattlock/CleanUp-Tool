@@ -32,15 +32,15 @@ Write-Host "         ▀███▄ ══════════════�
 Write-Host "           ▀████▄                ▄████▀         " -ForegroundColor $Teal
 Write-Host "             ▀██████████████████████▀           " -ForegroundColor $Teal
 Write-Host "                ▀▀▀████████████▀▀▀              " -ForegroundColor $Teal
-Write-Host "`n Starting Myles Mattlock CleanUp Tool GUI...`n" -ForegroundColor Gray
+Write-Host "`n Starting Myles Mattlock System CleanUp GUI...`n" -ForegroundColor Gray
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
-# --- NATIVE WINDOW DWM COLORING (WIN 11 TITLEBAR ACCENT) ---
-$DwmApi = Add-Type -MemberDefinition @"
+# --- NATIVE WINDOW DWM COLORING ---
+Add-Type -MemberDefinition @"
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-"@ -Name "DwmApi" -Namespace "Win32" -PassThru
+"@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
 # --- CONFIGURATION ---
 $Global:CurrentVersion = "3.0.0" 
@@ -48,7 +48,6 @@ $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
-# Safe Path Resolver (Handles both .ps1 and compiled .exe)
 if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like "*.exe" -and [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -notlike "*powershell*") {
     $CurrentDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 } elseif ($PSCommandPath) {
@@ -57,22 +56,138 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
     $CurrentDir = Get-Location
 }
 
+# Color Constants
+$HexGreen = "#4ADE80"
+$HexAmber = "#FACC15"
+$HexRed   = "#F87171"
+$HexWhite = "#FFFFFF"
+$HexMuted = "#888888"
+
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Myles Mattlock CleanUp Tool" Height="820" Width="960" 
+        Title="Myles Mattlock System CleanUp" Height="920" Width="1000" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
         ResizeMode="CanMinimize">
+    <Window.Resources>
+        <!-- Custom Shimmer Progress Bar Style -->
+        <Style x:Key="ShimmerProgressBarStyle" TargetType="ProgressBar">
+            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid x:Name="TemplateRoot">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border x:Name="FillBorder" CornerRadius="4">
+                                                    <Border.Background>
+                                                        <LinearGradientBrush x:Name="ShimmerBrush" StartPoint="0,0" EndPoint="1,0">
+                                                            <GradientStop Color="#007ACC" Offset="0.0"/>
+                                                            <GradientStop Color="#660098FF" Offset="0.4"/>
+                                                            <GradientStop Color="#FFFFFF" Offset="0.5"/>
+                                                            <GradientStop Color="#660098FF" Offset="0.6"/>
+                                                            <GradientStop Color="#007ACC" Offset="1.0"/>
+                                                        </LinearGradientBrush>
+                                                    </Border.Background>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ProfileButtonStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" x:Name="contentPresenter"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="StartButtonStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
+                                <!-- Loading Spinner Canvas -->
+                                <Viewbox x:Name="SpinnerBox" Width="16" Height="16" Margin="0,0,8,0" Visibility="Collapsed">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2Z" Stroke="#44FFFFFF" StrokeThickness="3"/>
+                                        <Path Data="M12,2A10,10 0 0,1 22,12" Stroke="#FFFFFF" StrokeThickness="3"/>
+                                        <Canvas.RenderTransform>
+                                            <RotateTransform x:Name="SpinnerRotate" Angle="0" CenterX="12" CenterY="12"/>
+                                        </Canvas.RenderTransform>
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock x:Name="BtnText" Text="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="Tag" Value="Ready"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#0098FF"/>
+                            </MultiTrigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="Tag" Value="Finished"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#33FF88"/>
+                            </MultiTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#444444"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="25">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- 0: Header -->
-            <RowDefinition Height="Auto"/> <!-- 1: Top Stats Bar -->
-            <RowDefinition Height="Auto"/> <!-- 2: Task Checkboxes & Profile Buttons -->
-            <RowDefinition Height="*"/>    <!-- 3: Output Log Terminal -->
-            <RowDefinition Height="Auto"/> <!-- 4: Reclaimed Storage Box -->
-            <RowDefinition Height="Auto"/> <!-- 5: Progress Bar -->
-            <RowDefinition Height="Auto"/> <!-- 6: Action Controls -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -84,51 +199,18 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="78.75" Height="78.75" Margin="0,0,20,0" VerticalAlignment="Center" Stretch="Uniform"/>
-
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                
                 <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
-
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
-        <!-- Top Stats Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,15">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Border Grid.Column="0" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="INITIAL FREE" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtInitialSpace" Text="Calculating..." FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <Border Grid.Column="2" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="DRIVE HEALTH" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveHealth" Text="Checking..." FontSize="18" FontWeight="Bold" Foreground="#00E5FF" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <Border Grid.Column="4" Background="#2D2D30" CornerRadius="6" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="TEMP" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
-                    <TextBlock x:Name="TxtDriveTemp" Text="-- °C" FontSize="18" FontWeight="Bold" Foreground="#FFCC00" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-        </Grid>
+        <!-- Top Stats Bar Container for Multiple Drives -->
+        <StackPanel x:Name="DriveStatsPanel" Grid.Row="1" Margin="0,0,0,15"/>
 
         <!-- Task Selection Checkboxes & Profile Buttons -->
         <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
@@ -139,30 +221,13 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="SELECT TASKS TO RUN" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center"/>
-                    
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="PROFILES:" FontSize="11" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <Button x:Name="BtnProfileDefault" Content="Default" Width="80" Height="26" 
-                                Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
-                        <Button x:Name="BtnProfileServer" Content="Server Cleanup" Width="105" Height="26" 
-                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
-                        <Button x:Name="BtnProfileCustom" Content="Custom" Width="80" Height="26" 
-                                Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
+                        <Button x:Name="BtnProfileDefault" Content="Default" Width="80" Height="26" Style="{StaticResource ProfileButtonStyle}" Background="#007ACC" Foreground="White" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand"/>
+                        <Button x:Name="BtnProfileServer" Content="Server Cleanup" Width="105" Height="26" Style="{StaticResource ProfileButtonStyle}" Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Margin="0,0,6,0" Cursor="Hand"/>
+                        <Button x:Name="BtnProfileCustom" Content="Custom" Width="80" Height="26" Style="{StaticResource ProfileButtonStyle}" Background="#2D2D30" Foreground="#AAAAAA" FontSize="11" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
                     </StackPanel>
                 </Grid>
-
                 <WrapPanel>
                     <CheckBox x:Name="ChkTempFiles" Content="Clear Temp Files &amp; System Logs" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
                     <CheckBox x:Name="ChkRecycleBin" Content="Empty Recycle Bin" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
@@ -176,8 +241,7 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
         <!-- Output Log Terminal -->
         <Border Grid.Row="3" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
             <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
-                <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" 
-                         FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap"/>
+                <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap"/>
             </ScrollViewer>
         </Border>
 
@@ -198,9 +262,8 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
 
         <!-- Progress Bar with Percentage Overlay -->
         <Grid Grid.Row="5" Height="18" Margin="0,15,0,15">
-            <ProgressBar x:Name="CleanProgress" Foreground="#007ACC" Background="#2D2D30" BorderThickness="0" Value="0" Maximum="100"/>
-            <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" 
-                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <ProgressBar x:Name="CleanProgress" Style="{StaticResource ShimmerProgressBarStyle}" Value="0" Maximum="100"/>
+            <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
 
         <!-- Action Controls -->
@@ -210,280 +273,560 @@ if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like 
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
-            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Width="160" Height="42" 
-                    Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand">
-                <Button.Resources>
-                    <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="6"/>
-                    </Style>
-                </Button.Resources>
-            </Button>
+            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Tag="Ready" Width="160" Height="42" 
+                    Style="{StaticResource StartButtonStyle}" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
         </Grid>
     </Grid>
 </Window>
 "@
 
-# Load XAML
+# Load XAML & Map UI Controls
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
-# Map UI Controls
-$ImgLogo            = $Window.FindName("ImgLogo")
-$ImgLogoRight       = $Window.FindName("ImgLogoRight")
-$TxtVersion         = $Window.FindName("TxtVersion")
-$TxtInitialSpace    = $Window.FindName("TxtInitialSpace")
-$TxtReclaimed       = $Window.FindName("TxtReclaimed")
-$TxtDriveHealth     = $Window.FindName("TxtDriveHealth")
-$TxtDriveTemp       = $Window.FindName("TxtDriveTemp")
-$TxtLog             = $Window.FindName("TxtLog")
-$LogScroll          = $Window.FindName("LogScroll")
-$CleanProgress      = $Window.FindName("CleanProgress")
-$TxtProgressPercent = $Window.FindName("TxtProgressPercent")
-$TxtStatus          = $Window.FindName("TxtStatus")
-$BtnStart           = $Window.FindName("BtnStart")
+@("ImgLogo", "ImgLogoRight", "TxtVersion", "DriveStatsPanel", "TxtReclaimed", 
+  "TxtLog", "LogScroll", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnStart",
+  "BtnProfileDefault", "BtnProfileServer", "BtnProfileCustom",
+  "ChkTempFiles", "ChkRecycleBin", "ChkCleanmgr", "ChkFlushDNS", "ChkDism") | ForEach-Object {
+    Set-Variable -Name $_ -Value $Window.FindName($_)
+}
 
-# Map Profile Buttons
-$BtnProfileDefault  = $Window.FindName("BtnProfileDefault")
-$BtnProfileServer   = $Window.FindName("BtnProfileServer")
-$BtnProfileCustom   = $Window.FindName("BtnProfileCustom")
+$TaskCheckboxes = @($ChkTempFiles, $ChkRecycleBin, $ChkCleanmgr, $ChkFlushDNS, $ChkDism)
+$InteractiveControls = $TaskCheckboxes + @($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom)
 
-# Map Task Checkboxes
-$ChkTempFiles       = $Window.FindName("ChkTempFiles")
-$ChkRecycleBin      = $Window.FindName("ChkRecycleBin")
-$ChkCleanmgr        = $Window.FindName("ChkCleanmgr")
-$ChkFlushDNS        = $Window.FindName("ChkFlushDNS")
-$ChkDism            = $Window.FindName("ChkDism")
-
-# Brushes for Profile Highlighting
+# Brushes
 $BrushActiveBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
+$BrushActiveHover = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0098FF")
 $BrushInactiveBG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
+$BrushInactiveHvr = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3E3E42")
 $BrushActiveFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#FFFFFF")
 $BrushInactiveFG  = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#AAAAAA")
 
+# Finish Button Brushes
+$BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#00FF66")
+$BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
+
 $Global:IsUpdatingProfile = $false
+$Global:HasAlertedHighTemp = $false
+$Global:DriveUIMap = @{}
 
-function Save-LogAndMaintainHistory {
-    try {
-        if (-not (Test-Path $Global:LogDir)) {
-            New-Item -Path $Global:LogDir -ItemType Directory -Force | Out-Null
+# --- HIGH TEMPERATURE ALERT TONE FUNCTION ---
+function Play-TempAlertSound {
+    for ($i = 0; $i -lt 20; $i++) {
+        [Console]::Beep(1500, 150)
+        Start-Sleep -Milliseconds 50
+        [Console]::Beep(800, 150)
+        Start-Sleep -Milliseconds 50
+    }
+}
+
+# --- ANIMATION CONTROLS ---
+$Duration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1))
+$SpinAnimation = New-Object System.Windows.Media.Animation.DoubleAnimation (0, 360, $Duration)
+$SpinAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+
+# Progress Bar Shimmer Brush Sweep Animation
+$ShimmerDuration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1.5))
+$ShimmerAnimation = New-Object System.Windows.Media.Animation.PointAnimation
+$ShimmerAnimation.From = New-Object System.Windows.Point (-1, 0)
+$ShimmerAnimation.To = New-Object System.Windows.Point (2, 0)
+$ShimmerAnimation.Duration = $ShimmerDuration
+$ShimmerAnimation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+
+function Start-ProgressBarShimmer {
+    $Template = $CleanProgress.Template
+    $Track = $Template.FindName("PART_Track", $CleanProgress)
+    if ($Track -and $Track.DecreaseRepeatButton) {
+        $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $FillBorder = $DecTemplate.FindName("FillBorder", $Track.DecreaseRepeatButton)
+        $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
+        
+        if ($FillBorder -and $ShimmerBrush) {
+            $FillBorder.Background = $ShimmerBrush
+            $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $ShimmerAnimation)
         }
+    }
+}
 
-        # Save current session terminal log
-        $TimeStamp = (Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
-        $LogFilePath = Join-Path $Global:LogDir "Cleanup_$TimeStamp.log"
-        $TxtLog.Text | Out-File -FilePath $LogFilePath -Encoding utf8 -Force
-
-        Write-GuiLog "Log saved to: $LogFilePath"
-
-        # Rotate logs to retain only the 5 newest files
-        $LogFiles = Get-ChildItem -Path $Global:LogDir -Filter "Cleanup_*.log" | Sort-Object CreationTime -Descending
-        if ($LogFiles.Count -gt 5) {
-            $LogsToDelete = $LogFiles | Select-Object -Skip 5
-            foreach ($OldLog in $LogsToDelete) {
-                Remove-Item $OldLog.FullName -Force -ErrorAction SilentlyContinue
-                Write-GuiLog "Purged old log file: $($OldLog.Name)"
-            }
+function Stop-ProgressBarShimmer {
+    $Template = $CleanProgress.Template
+    $Track = $Template.FindName("PART_Track", $CleanProgress)
+    if ($Track -and $Track.DecreaseRepeatButton) {
+        $DecTemplate = $Track.DecreaseRepeatButton.Template
+        $FillBorder = $DecTemplate.FindName("FillBorder", $Track.DecreaseRepeatButton)
+        $ShimmerBrush = $DecTemplate.FindName("ShimmerBrush", $Track.DecreaseRepeatButton)
+        
+        if ($ShimmerBrush) {
+            $ShimmerBrush.BeginAnimation([System.Windows.Media.LinearGradientBrush]::StartPointProperty, $null)
         }
-    } catch {
-        Write-GuiLog "Note: Could not save log to disk."
+        if ($FillBorder) {
+            $FillBorder.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#007ACC")
+        }
     }
 }
 
-function Set-ActiveProfileButton ($Profile) {
-    $BtnProfileDefault.Background = if ($Profile -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileDefault.Foreground = if ($Profile -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
+function Start-ButtonSpinner {
+    $Template = $BtnStart.Template
+    $SpinnerBox = $Template.FindName("SpinnerBox", $BtnStart)
+    $SpinnerRotate = $Template.FindName("SpinnerRotate", $BtnStart)
 
-    $BtnProfileServer.Background  = if ($Profile -eq "Server")  { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileServer.Foreground  = if ($Profile -eq "Server")  { $BrushActiveFG } else { $BrushInactiveFG }
-
-    $BtnProfileCustom.Background  = if ($Profile -eq "Custom")  { $BrushActiveBG } else { $BrushInactiveBG }
-    $BtnProfileCustom.Foreground  = if ($Profile -eq "Custom")  { $BrushActiveFG } else { $BrushInactiveFG }
-}
-
-function Evaluate-CurrentProfile {
-    if ($Global:IsUpdatingProfile) { return }
-
-    if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) {
-        Set-ActiveProfileButton "Default"
-    }
-    elseif ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and (-not $ChkFlushDNS.IsChecked) -and (-not $ChkDism.IsChecked)) {
-        Set-ActiveProfileButton "Server"
-    }
-    else {
-        Set-ActiveProfileButton "Custom"
+    if ($SpinnerBox -and $SpinnerRotate) {
+        $SpinnerBox.Visibility = [System.Windows.Visibility]::Visible
+        $SpinnerRotate.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $SpinAnimation)
     }
 }
 
-# Attach Checkbox Change Event Handlers
-$AllCheckboxes = @($ChkTempFiles, $ChkRecycleBin, $ChkCleanmgr, $ChkFlushDNS, $ChkDism)
-foreach ($Chk in $AllCheckboxes) {
-    $Chk.Add_Checked({ Evaluate-CurrentProfile })
-    $Chk.Add_Unchecked({ Evaluate-CurrentProfile })
+function Stop-ButtonSpinner {
+    $Template = $BtnStart.Template
+    $SpinnerBox = $Template.FindName("SpinnerBox", $BtnStart)
+    $SpinnerRotate = $Template.FindName("SpinnerRotate", $BtnStart)
+
+    if ($SpinnerBox -and $SpinnerRotate) {
+        $SpinnerBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $SpinnerRotate.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+    }
 }
 
-# Profile Button Click Handlers
-$BtnProfileDefault.Add_Click({
-    $Global:IsUpdatingProfile = $true
-    $ChkTempFiles.IsChecked  = $true
-    $ChkRecycleBin.IsChecked = $true
-    $ChkCleanmgr.IsChecked   = $true
-    $ChkFlushDNS.IsChecked   = $true
-    $ChkDism.IsChecked       = $true
-    Set-ActiveProfileButton "Default"
-    $Global:IsUpdatingProfile = $false
-})
-
-$BtnProfileServer.Add_Click({
-    $Global:IsUpdatingProfile = $true
-    $ChkTempFiles.IsChecked  = $true
-    $ChkRecycleBin.IsChecked = $true
-    $ChkCleanmgr.IsChecked   = $true
-    $ChkFlushDNS.IsChecked   = $false
-    $ChkDism.IsChecked       = $false
-    Set-ActiveProfileButton "Server"
-    $Global:IsUpdatingProfile = $false
-})
-
-$BtnProfileCustom.Add_Click({
-    Set-ActiveProfileButton "Custom"
-})
-
+# --- GLOBAL FUNCTIONS ---
 function Write-GuiLog ($Message) {
     if ([string]::IsNullOrWhiteSpace($Message)) { return }
     $TxtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] $Message`n")
     $LogScroll.ScrollToEnd()
 }
 
-# --- DIRECT HARDWARE SMART DIAGNOSTICS ---
-function Get-DriveHealthDiagnostics {
-    Write-GuiLog "=== DISK HEALTH & SMART DIAGNOSTICS ==="
-    $HealthStatusText = "Healthy"
-    $TempStatusText = "N/A"
-
+function Save-LogAndMaintainHistory {
     try {
-        $PhysicalDisks = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue
+        if (-not (Test-Path $Global:LogDir)) { New-Item -Path $Global:LogDir -ItemType Directory -Force | Out-Null }
+        $LogFilePath = Join-Path $Global:LogDir "Cleanup_$((Get-Date).ToString('yyyy-MM-dd_HH-mm-ss')).log"
+        $TxtLog.Text | Out-File -FilePath $LogFilePath -Encoding utf8 -Force
+        Write-GuiLog "Log saved to: $LogFilePath"
+
+        $LogFiles = Get-ChildItem -Path $Global:LogDir -Filter "Cleanup_*.log" | Sort-Object CreationTime -Descending
+        if ($LogFiles.Count -gt 5) {
+            $LogFiles | Select-Object -Skip 5 | ForEach-Object {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                Write-GuiLog "Purged old log file: $($_.Name)"
+            }
+        }
+    } catch { Write-GuiLog "Note: Could not save log to disk." }
+}
+
+function Set-ActiveProfileButton ($ProfileMode) {
+    $BtnProfileDefault.Background = if ($ProfileMode -eq "Default") { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileDefault.Foreground = if ($ProfileMode -eq "Default") { $BrushActiveFG } else { $BrushInactiveFG }
+    $BtnProfileServer.Background  = if ($ProfileMode -eq "Server")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileServer.Foreground  = if ($ProfileMode -eq "Server")  { $BrushActiveFG } else { $BrushInactiveFG }
+    $BtnProfileCustom.Background  = if ($ProfileMode -eq "Custom")  { $BrushActiveBG } else { $BrushInactiveBG }
+    $BtnProfileCustom.Foreground  = if ($ProfileMode -eq "Custom")  { $BrushActiveFG } else { $BrushInactiveFG }
+}
+
+function Invoke-CurrentProfileEvaluation {
+    if ($Global:IsUpdatingProfile -or (-not $BtnStart.IsEnabled)) { return }
+    if ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and $ChkFlushDNS.IsChecked -and $ChkDism.IsChecked) { Set-ActiveProfileButton "Default" }
+    elseif ($ChkTempFiles.IsChecked -and $ChkRecycleBin.IsChecked -and $ChkCleanmgr.IsChecked -and (-not $ChkFlushDNS.IsChecked) -and (-not $ChkDism.IsChecked)) { Set-ActiveProfileButton "Server" }
+    else { Set-ActiveProfileButton "Custom" }
+}
+
+function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
+    $Grid = New-Object System.Windows.Controls.Grid
+    $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
+
+    0..5 | ForEach-Object {
+        $col = New-Object System.Windows.Controls.ColumnDefinition
+        $col.Width = [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star)
+        [void]$Grid.ColumnDefinitions.Add($col)
+        if ($_ -lt 5) {
+            $spaceCol = New-Object System.Windows.Controls.ColumnDefinition
+            $spaceCol.Width = [System.Windows.GridLength]::new(8, [System.Windows.GridUnitType]::Pixel)
+            [void]$Grid.ColumnDefinitions.Add($spaceCol)
+        }
+    }
+
+    function Create-Card ($Title, $ValText, $FgHex, $ColIdx) {
+        $Border = New-Object System.Windows.Controls.Border
+        $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
+        $Border.CornerRadius = New-Object System.Windows.CornerRadius(6)
+        $Border.Padding = New-Object System.Windows.Thickness(8, 10, 8, 10)
+        [System.Windows.Controls.Grid]::SetColumn($Border, $ColIdx)
+
+        $Stack = New-Object System.Windows.Controls.StackPanel
+        $TTitle = New-Object System.Windows.Controls.TextBlock
+        $TTitle.Text = $Title; $TTitle.FontSize = 10; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
+        $TTitle.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#888888")
+
+        $TVal = New-Object System.Windows.Controls.TextBlock
+        $TVal.Text = $ValText; $TVal.FontSize = 14; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
+        $TVal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($FgHex)
+        $TVal.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
+
+        [void]$Stack.Children.Add($TTitle)
+        [void]$Stack.Children.Add($TVal)
+        $Border.Child = $Stack
+        return @{ Border = $Border; Text = $TVal }
+    }
+
+    $CardSpace    = Create-Card "DRIVE SPACE ($DriveLetter)" $InitialFreeText $HexWhite 0
+    $CardHealth   = Create-Card "HEALTH" "Loading..." $HexMuted 2
+    $CardTemp     = Create-Card "TEMP" "Loading..." $HexMuted 4
+    $CardHours    = Create-Card "POWER HOURS" "Loading..." $HexMuted 6
+    $CardCycles   = Create-Card "POWER CYCLES" "Loading..." $HexMuted 8
+    $CardShutdown = Create-Card "UNSAFE SHUTDOWN" "Loading..." $HexMuted 10
+
+    [void]$Grid.Children.Add($CardSpace.Border)
+    [void]$Grid.Children.Add($CardHealth.Border)
+    [void]$Grid.Children.Add($CardTemp.Border)
+    [void]$Grid.Children.Add($CardHours.Border)
+    [void]$Grid.Children.Add($CardCycles.Border)
+    [void]$Grid.Children.Add($CardShutdown.Border)
+
+    [void]$DriveStatsPanel.Children.Add($Grid)
+    $Global:DriveUIMap[$DriveLetter] = @{ 
+        Health   = $CardHealth.Text; 
+        Temp     = $CardTemp.Text;
+        Hours    = $CardHours.Text;
+        Cycles   = $CardCycles.Text;
+        Unsafe   = $CardShutdown.Text
+    }
+}
+
+function Get-SmartctlData ($DiskIndex) {
+    $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    if (-not $SmartctlPath) {
+        $Candidates = @(
+            (Join-Path $CurrentDir "smartctl.exe"),
+            "C:\Program Files\smartmontools\bin\smartctl.exe",
+            "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
+        )
+        foreach ($Path in $Candidates) {
+            if (Test-Path $Path) { $SmartctlPath = $Path; break }
+        }
+    }
+
+    if (-not $SmartctlPath) { return $null }
+
+    $p = $null
+    try {
+        $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
+            FileName               = $SmartctlPath
+            Arguments              = "-j -a /dev/pd$DiskIndex"
+            UseShellExecute        = $false
+            RedirectStandardOutput = $true
+            CreateNoWindow         = $true
+        }
+        $p = [System.Diagnostics.Process]::Start($ProcessInfo)
+        $Output = $p.StandardOutput.ReadToEnd()
+        $p.WaitForExit()
+
+        if (-not [string]::IsNullOrWhiteSpace($Output)) {
+            return ($Output | ConvertFrom-Json)
+        }
+    } catch {}
+    finally {
+        if ($null -ne $p) {
+            $p.Close()
+            $p.Dispose()
+        }
+    }
+    return $null
+}
+
+function Update-DriveHealthAndTemp {
+    try {
+        $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+        $IsHighTempDetected = $false
 
         foreach ($Disk in $PhysicalDisks) {
-            $Model = $Disk.Model
-            $Index = $Disk.Index
-            $Interface = $Disk.InterfaceType
-            $Status = $Disk.Status
+            $TempStr = "N/A"; $TempHex = $HexGreen
+            $HealthStr = "Healthy"; $HealthHex = $HexGreen
+            $HoursStr = "N/A"
+            $CyclesStr = "N/A"
+            $UnsafeStr = "N/A"
 
-            Write-GuiLog "Drive [$Index]: $Model ($Interface) - SMART Status: $Status"
-            
-            if ($TempStatusText -eq "N/A") {
-                $PhysDisk = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $Index } -ErrorAction SilentlyContinue
-                if ($PhysDisk) {
-                    $Counter = $PhysDisk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-                    if ($Counter -and $Counter.Temperature -gt 0) {
-                        $TempStatusText = "$($Counter.Temperature) °C"
+            # 1. Primary NVMe / SSD Temperature query via Windows Storage Reliability Counter
+            $StorageStats = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            if ($StorageStats -and $StorageStats.Temperature) {
+                $RawTemp = [int]$StorageStats.Temperature
+                $TempStr = "$RawTemp °C"
+                if ($RawTemp -ge 70) {
+                    $TempHex = $HexRed
+                    $IsHighTempDetected = $true
+                } elseif ($RawTemp -ge 50) {
+                    $TempHex = $HexAmber
+                } else {
+                    $TempHex = $HexGreen
+                }
+            }
+
+            # 2. Fetch smartctl JSON for detailed SMART attributes
+            $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
+
+            if ($Json) {
+                # Fallback Temperature query if StorageReliabilityCounter returned null
+                if ($TempStr -eq "N/A") {
+                    $RawTemp = $null
+                    if ($Json.temperature.current) {
+                        $RawTemp = [int]$Json.temperature.current
+                    } elseif ($Json.nvme_smart_health_information_log.temperature) {
+                        $RawTemp = [int]$Json.nvme_smart_health_information_log.temperature
                     }
-                    if ($Counter -and $Counter.Wear -ne $null) {
-                        $HealthStatusText = "$(100 - $Counter.Wear)% Health"
+
+                    if ($null -ne $RawTemp) {
+                        $TempStr = "$RawTemp °C"
+                        if ($RawTemp -ge 70) {
+                            $TempHex = $HexRed
+                            $IsHighTempDetected = $true
+                        } elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
+                        else { $TempHex = $HexGreen }
+                    }
+                }
+
+                # Health / Wear Evaluation
+                if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
+                    $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
+                    $HealthVal = 100 - $Used
+                    $HealthStr = "$HealthVal% Health"
+
+                    if ($HealthVal -lt 70) { $HealthHex = $HexRed }
+                    elseif ($HealthVal -lt 90) { $HealthHex = $HexAmber }
+                    else { $HealthHex = $HexGreen }
+                } elseif ($Json.smart_status.passed -eq $true) {
+                    $HealthStr = "100% Health"
+                    $HealthHex = $HexGreen
+                }
+
+                # Power-On Hours
+                if ($Json.power_on_time.hours) {
+                    $HoursStr = "$($Json.power_on_time.hours) hrs"
+                } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
+                    $HoursStr = "$($Json.nvme_smart_health_information_log.power_on_hours) hrs"
+                }
+
+                # Power Cycles
+                if ($Json.power_cycle_count) {
+                    $CyclesStr = "$($Json.power_cycle_count)"
+                } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
+                    $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
+                }
+
+                # Unsafe Shutdowns
+                $RawUnsafe = $null
+                if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
+                    $RawUnsafe = [int]$Json.nvme_smart_health_information_log.unsafe_shutdowns
+                } else {
+                    $Attr = $Json.ata_smart_attributes.table | Where-Object { $_.id -eq 192 -or $_.name -like "*Unsafe_Shutdown*" }
+                    if ($Attr) { $RawUnsafe = [int]$Attr.raw.value }
+                }
+
+                if ($null -ne $RawUnsafe) { $UnsafeStr = "$RawUnsafe" }
+            } else {
+                if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
+            }
+
+            # 3. Update UI Cards
+            $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
+            if ($DiskObj) {
+                $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
+                foreach ($Part in $Partitions) {
+                    if ($Part.DriveLetter) {
+                        $Key = "$($Part.DriveLetter):"
+                        if ($Global:DriveUIMap.ContainsKey($Key)) {
+                            $Global:DriveUIMap[$Key].Health.Text       = $HealthStr
+                            $Global:DriveUIMap[$Key].Health.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HealthHex)
+
+                            $Global:DriveUIMap[$Key].Temp.Text         = $TempStr
+                            $Global:DriveUIMap[$Key].Temp.Foreground   = [System.Windows.Media.BrushConverter]::new().ConvertFromString($TempHex)
+
+                            $Global:DriveUIMap[$Key].Hours.Text        = $HoursStr
+                            $Global:DriveUIMap[$Key].Hours.Foreground  = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
+
+                            $Global:DriveUIMap[$Key].Cycles.Text       = $CyclesStr
+                            $Global:DriveUIMap[$Key].Cycles.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
+
+                            $Global:DriveUIMap[$Key].Unsafe.Text       = $UnsafeStr
+                            $Global:DriveUIMap[$Key].Unsafe.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
+                        }
                     }
                 }
             }
         }
-    } catch {
-        $HealthStatusText = "Healthy"
-    }
 
-    $TxtDriveHealth.Text = $HealthStatusText
-    $TxtDriveTemp.Text = $TempStatusText
-}
-
-function Check-ForUpdates {
-    Write-GuiLog "Checking for updates..."
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-App"
-        $Url = "https://api.github.com/repos/$Global:RepoName/releases"
-
-        $Releases = Invoke-RestMethod -Uri $Url -Method Get -UserAgent $UserAgent -ErrorAction Stop
-        $StableReleases = $Releases | Where-Object { $_.prerelease -eq $false }
-        $LocalVersion = [version]($Global:CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
-
-        foreach ($Rel in $StableReleases) {
-            $RemoteVersion = [version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0])
-            if ($RemoteVersion -gt $LocalVersion) {
-                Write-GuiLog "[!] UPDATE AVAILABLE: $($Rel.tag_name)"
-                break 
+        # 4. Sound Alert Trigger (Plays on GUI main thread so Beep works)
+        if ($IsHighTempDetected) {
+            if (-not $Global:HasAlertedHighTemp) {
+                $Global:HasAlertedHighTemp = $true
+                Write-GuiLog "[!] ALERT: High disk temperature detected (>= 70°C)!"
+                Play-TempAlertSound
             }
+        } else {
+            $Global:HasAlertedHighTemp = $false
         }
-        Write-GuiLog "Running stable version (v$Global:CurrentVersion)."
-    } catch {
-        Write-GuiLog "Note: Update check skipped."
-    }
+    } catch {}
 }
+
+# Attach Hover & Checkbox Events
+@($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom) | ForEach-Object {
+    $_.Add_MouseEnter({
+        if (-not $BtnStart.IsEnabled) { return }
+        $this.Background = if ($this.Background.ToString() -eq $BrushActiveBG.ToString()) { $BrushActiveHover } else { $BrushInactiveHvr }
+        if ($this.Background.ToString() -ne $BrushActiveHover.ToString()) { $this.Foreground = $BrushActiveFG }
+    })
+    $_.Add_MouseLeave({ if ($BtnStart.IsEnabled) { Invoke-CurrentProfileEvaluation } })
+}
+
+$TaskCheckboxes | ForEach-Object {
+    $_.Add_Checked({ Invoke-CurrentProfileEvaluation })
+    $_.Add_Unchecked({ Invoke-CurrentProfileEvaluation })
+}
+
+# Profile Clicks
+$BtnProfileDefault.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
+    $Global:IsUpdatingProfile = $true
+    $TaskCheckboxes | ForEach-Object { $_.IsChecked = $true }
+    Set-ActiveProfileButton "Default"
+    $Global:IsUpdatingProfile = $false
+})
+
+$BtnProfileServer.Add_Click({
+    if (-not $BtnStart.IsEnabled) { return }
+    $Global:IsUpdatingProfile = $true
+    $ChkTempFiles.IsChecked = $ChkRecycleBin.IsChecked = $ChkCleanmgr.IsChecked = $true
+    $ChkFlushDNS.IsChecked  = $ChkDism.IsChecked = $false
+    Set-ActiveProfileButton "Server"
+    $Global:IsUpdatingProfile = $false
+})
+
+$BtnProfileCustom.Add_Click({ if ($BtnStart.IsEnabled) { Set-ActiveProfileButton "Custom" } })
 
 $Window.Add_Loaded({
+    # Instant DWM Window Frame Coloring
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
         $DarkTealColor = 0x00382D12 
         [Win32.DwmApi]::DwmSetWindowAttribute($Hwnd, 35, [ref]$DarkTealColor, [System.Runtime.InteropServices.Marshal]::SizeOf([type][int])) | Out-Null
     } catch {}
 
-    $LogoPath = Join-Path $CurrentDir "Logo.jpg"
-    if (Test-Path $LogoPath) {
-        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
-        $bitmap.BeginInit()
-        $bitmap.UriSource = New-Object System.Uri($LogoPath, [System.UriKind]::Absolute)
-        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmap.EndInit()
-        $ImgLogo.Source = $bitmap
-    }
-
-    $LogoRightPath = Join-Path $CurrentDir "LogoRight.jpg"
-    if (Test-Path $LogoRightPath) {
-        $bitmapRight = New-Object System.Windows.Media.Imaging.BitmapImage
-        $bitmapRight.BeginInit()
-        $bitmapRight.UriSource = New-Object System.Uri($LogoRightPath, [System.UriKind]::Absolute)
-        $bitmapRight.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmapRight.EndInit()
-        $ImgLogoRight.Source = $bitmapRight
+    # Image Load
+    @("Logo.jpg", "LogoRight.jpg") | ForEach-Object {
+        $Path = Join-Path $CurrentDir $_
+        if (Test-Path $Path) {
+            $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bmp.BeginInit(); $bmp.UriSource = New-Object System.Uri($Path, [System.UriKind]::Absolute); $bmp.CacheOption = "OnLoad"; $bmp.EndInit()
+            if ($_ -eq "Logo.jpg") { $ImgLogo.Source = $bmp } else { $ImgLogoRight.Source = $bmp }
+        }
     }
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
-    $Drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-    $Global:StartingFreeSpace = $Drive.FreeSpace
-    $TxtInitialSpace.Text = "$([Math]::Round($Global:StartingFreeSpace / 1GB, 2)) GB"
     
-    Write-GuiLog "System Cleanup Initialized."
-    Get-DriveHealthDiagnostics
-    Check-ForUpdates
-})
-
-# --- ASYNCHRONOUS RUNSPACE WORKER ---
-$BtnStart.Add_Click({
-    # Read state of task selections
-    $SelectedTasks = @{
-        DoTemp      = $ChkTempFiles.IsChecked
-        DoRecycle   = $ChkRecycleBin.IsChecked
-        DoCleanmgr  = $ChkCleanmgr.IsChecked
-        DoFlushDNS  = $ChkFlushDNS.IsChecked
-        DoDism      = $ChkDism.IsChecked
+    # Render rows instantly using fast .NET DriveInfo
+    $Drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | Select-Object -First 3
+    foreach ($Drive in $Drives) {
+        $Letter = $Drive.Name.TrimEnd('\')
+        $FreeGB = "$([Math]::Round($Drive.AvailableFreeSpace / 1GB, 2)) GB"
+        if ($Letter -eq "C:") { $Global:StartingFreeSpace = $Drive.AvailableFreeSpace }
+        Add-DriveRowUI -DriveLetter $Letter -InitialFreeText $FreeGB
     }
 
-    $TotalSelected = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
-    if ($TotalSelected -eq 0) {
-        $TxtStatus.Text = "Please select at least one task to run."
+    Write-GuiLog "System Cleanup Initialized."
+
+    # Non-blocking update trigger via DispatcherTimer (100ms delay)
+    $StartTelemetryTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $StartTelemetryTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $StartTelemetryTimer.Add_Tick({
+        $this.Stop()
+        Update-DriveHealthAndTemp
+    })
+    $StartTelemetryTimer.Start()
+
+    # GLOBAL INITIALIZATION QUEUE
+    $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
+
+    # ASYNCHRONOUS BACKGROUND STARTUP WORKER
+    $InitScript = {
+        param($RepoName, $CurrentVersion, $InitQueue)
+
+        # 1. SMART Hardware Scan Log
+        try {
+            Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
+                $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)" })
+            }
+        } catch {}
+
+        # 2. Check Updates
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $Releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoName/releases" -Method Get -UserAgent "Mozilla/5.0 PowerShell-App" -ErrorAction Stop
+            $LocalVersion = [version]($CurrentVersion.ToLower().TrimStart('v').Split("-")[0])
+            $HasUpdate = $false
+            foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
+                if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
+                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "[!] UPDATE AVAILABLE: $($Rel.tag_name)" })
+                    $HasUpdate = $true; break
+                }
+            }
+            if (-not $HasUpdate) { $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Running stable version (v$CurrentVersion)." }) }
+        } catch { $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Note: Update check skipped." }) }
+    }
+
+    $InitRunspace = [runspacefactory]::CreateRunspace()
+    $InitRunspace.Open()
+    $InitPS = [powershell]::Create()
+    $InitPS.Runspace = $InitRunspace
+    [void]$InitPS.AddScript($InitScript)
+    [void]$InitPS.AddArgument($Global:RepoName)
+    [void]$InitPS.AddArgument($Global:CurrentVersion)
+    [void]$InitPS.AddArgument($Global:InitQueue)
+    $InitAsync = $InitPS.BeginInvoke()
+
+    $InitTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $InitTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $InitTimer.Add_Tick({
+        $item = $null
+        while ($Global:InitQueue.TryDequeue([ref]$item)) {
+            if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
+        }
+        if ($InitAsync.IsCompleted) {
+            $this.Stop()
+            try { $InitPS.Dispose(); $InitRunspace.Dispose() } catch {}
+        }
+    })
+    $InitTimer.Start()
+
+    # Recurring 30-second monitor timer
+    $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
+    $MonitorTimer.Add_Tick({ Update-DriveHealthAndTemp })
+    $MonitorTimer.Start()
+})
+
+# Async Execution Worker
+$BtnStart.Add_Click({
+    if ($BtnStart.Content -eq "Finished") {
+        $Window.Close()
         return
+    }
+
+    $SelectedTasks = @{
+        DoTemp = $ChkTempFiles.IsChecked; DoRecycle = $ChkRecycleBin.IsChecked
+        DoCleanmgr = $ChkCleanmgr.IsChecked; DoFlushDNS = $ChkFlushDNS.IsChecked; DoDism = $ChkDism.IsChecked
+    }
+
+    if (($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count -eq 0) {
+        $TxtStatus.Text = "Please select at least one task to run."; return
     }
 
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
+    $BtnStart.Tag = "Cleaning"
+    $BtnStart.Background = $BrushActiveBG
+    $BtnStart.Foreground = $BrushActiveFG
+    
+    # Start Animations (Spinner & Linear Gradient Progress Bar Sweep)
+    Start-ButtonSpinner
+    Start-ProgressBarShimmer
     $CleanProgress.Value = 0
     $TxtProgressPercent.Text = "0%"
-    
-    # Disable controls during cleanup
-    $BtnProfileDefault.IsEnabled = $false
-    $BtnProfileServer.IsEnabled  = $false
-    $BtnProfileCustom.IsEnabled  = $false
-    $ChkTempFiles.IsEnabled      = $false
-    $ChkRecycleBin.IsEnabled     = $false
-    $ChkCleanmgr.IsEnabled       = $false
-    $ChkFlushDNS.IsEnabled       = $false
-    $ChkDism.IsEnabled           = $false
+    $InteractiveControls | ForEach-Object { $_.IsEnabled = $false }
 
     $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     $Global:ProgressQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
@@ -492,83 +835,51 @@ $BtnStart.Add_Click({
     $ScriptBlock = {
         param($CurrentDir, $RegFiles, $SelectedTasks, $LogQueue, $ProgressQueue, $FinishedQueue)
 
-        function Send-Log ($msg) {
-            if (-not [string]::IsNullOrWhiteSpace($msg)) {
-                $LogQueue.Enqueue($msg)
-            }
-        }
-        function Send-Progress ($val, $status) {
-            $ProgressQueue.Enqueue(@{ Value = $val; Status = $status })
-        }
+        function Send-Log ($msg) { if (-not [string]::IsNullOrWhiteSpace($msg)) { $LogQueue.Enqueue($msg) } }
+        function Send-Progress ($val, $status) { $ProgressQueue.Enqueue(@{ Value = $val; Status = $status }) }
 
-        # Safe Thread-Compatible Process Runner
-        function Run-SilentProcess ($FileName, $Arguments) {
+        function Invoke-SilentProcess ($FileName, $Arguments) {
+            $p = $null
             try {
-                $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-                $pinfo.FileName = $FileName
-                $pinfo.Arguments = $Arguments
-                $pinfo.UseShellExecute = $false
-                $pinfo.RedirectStandardOutput = $true
-                $pinfo.RedirectStandardError = $true
-                $pinfo.CreateNoWindow = $true
-
-                $p = New-Object System.Diagnostics.Process
-                $p.StartInfo = $pinfo
-                $p.Start() | Out-Null
-
+                $pinfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
+                    FileName = $FileName; Arguments = $Arguments; UseShellExecute = $false
+                    RedirectStandardOutput = $true; RedirectStandardError = $true; CreateNoWindow = $true
+                }
+                $p = [System.Diagnostics.Process]::Start($pinfo)
                 while (-not $p.StandardOutput.EndOfStream) {
                     $line = $p.StandardOutput.ReadLine()
                     if ($line) { Send-Log $line.Trim() }
                 }
                 $p.WaitForExit()
-                $p.Close()
-            } catch {
-                Send-Log "Task ($FileName) finished."
+            } catch { Send-Log "Task ($FileName) finished." }
+            finally {
+                if ($null -ne $p) { $p.Close(); $p.Dispose() }
             }
         }
 
         $TotalTasks = ($SelectedTasks.Values | Where-Object { $_ -eq $true }).Count
         $CompletedTasks = 0
 
-        # Always apply registry prep settings automatically
         foreach ($File in $RegFiles) {
             $FilePath = Join-Path $CurrentDir $File
-            if (Test-Path $FilePath) {
-                Run-SilentProcess "reg.exe" "import `"$FilePath`""
-            }
+            if (Test-Path $FilePath) { Invoke-SilentProcess "reg.exe" "import `"$FilePath`"" }
         }
 
-        # 1. Clear Temp Files
         if ($SelectedTasks.DoTemp) {
-            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $StartPercent "Clearing temporary files..."
+            Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Clearing temporary files..."
             Send-Log "=== CLEARING TEMP FILES AND LOGS ==="
-            $TargetFolders = @(
-                "C:\Windows\Temp\*", "C:\Windows\Prefetch\*", 
-                "C:\Windows\SoftwareDistribution\Download\*", 
-                "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs"
-            )
-            foreach ($Path in $TargetFolders) {
-                if (Test-Path $Path) {
-                    Send-Log "Deleting files in: $Path"
-                    Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
-                }
+            @("C:\Windows\Temp\*", "C:\Windows\Prefetch\*", "C:\Windows\SoftwareDistribution\Download\*", "$([System.IO.Path]::GetTempPath())*", "C:\Intel", "C:\PerfLogs") | ForEach-Object {
+                if (Test-Path $_) { Send-Log "Deleting files in: $_"; Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
             }
-            $CompletedTasks++
-            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $EndPercent "Temp files cleared."
+            $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Temp files cleared."
         }
 
-        # 2. Empty Recycle Bin
         if ($SelectedTasks.DoRecycle) {
-            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $StartPercent "Emptying Recycle Bin..."
+            Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Emptying Recycle Bin..."
             Send-Log "=== EMPTYING RECYCLE BIN ==="
             Clear-RecycleBin -Force -ErrorAction SilentlyContinue
             Send-Log "Recycle bin emptied."
-            $CompletedTasks++
-            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $EndPercent "Recycle bin emptied."
+            $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Recycle bin emptied."
         }
 
         # 3. Disk Cleanup Utility
@@ -576,33 +887,34 @@ $BtnStart.Add_Click({
             $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $StartPercent "Running Disk Cleanup Utility..."
             Send-Log "=== RUNNING CLEANMGR UTILITY ==="
+
+            # Direct Registry Enforcer: Ensures cleanmgr is flagged to purge Previous Installations (Windows.old)
+            $VolCaches = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+            $OldWinKey = Join-Path $VolCaches "Previous Installations"
+            if (Test-Path $OldWinKey) {
+                Set-ItemProperty -Path $OldWinKey -Name "StateFlags0001" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $OldWinKey -Name "StateFlags0002" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+            }
+
             $CleanParam = if (Test-Path "C:\Windows.old") { "/SAGERUN:1" } else { "/SAGERUN:2" }
-            Run-SilentProcess "cleanmgr.exe" $CleanParam
+            Invoke-SilentProcess "cleanmgr.exe" $CleanParam
             $CompletedTasks++
             $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $EndPercent "Disk cleanup complete."
         }
 
-        # 4. Flush DNS
         if ($SelectedTasks.DoFlushDNS) {
-            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $StartPercent "Flushing DNS Cache..."
+            Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Flushing DNS Cache..."
             Send-Log "=== FLUSHING DNS CACHE ==="
-            Run-SilentProcess "ipconfig.exe" "/flushdns"
-            $CompletedTasks++
-            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $EndPercent "DNS Cache flushed."
+            Invoke-SilentProcess "ipconfig.exe" "/flushdns"
+            $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DNS Cache flushed."
         }
 
-        # 5. DISM Optimization
         if ($SelectedTasks.DoDism) {
-            $StartPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $StartPercent "Optimizing DISM Component Store..."
+            Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Optimizing DISM Component Store..."
             Send-Log "=== RUNNING DISM COMPONENT STORE CLEANUP ==="
-            Run-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
-            $CompletedTasks++
-            $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
-            Send-Progress $EndPercent "DISM cleanup complete."
+            Invoke-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
+            $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DISM cleanup complete."
         }
 
         Send-Progress 100 "Optimization Complete!"
@@ -614,76 +926,52 @@ $BtnStart.Add_Click({
     $Global:PowerShell = [powershell]::Create()
     $Global:PowerShell.Runspace = $Global:Runspace
     [void]$Global:PowerShell.AddScript($ScriptBlock)
-    [void]$Global:PowerShell.AddArgument($CurrentDir)
-    [void]$Global:PowerShell.AddArgument($Global:RegFiles)
-    [void]$Global:PowerShell.AddArgument($SelectedTasks)
-    [void]$Global:PowerShell.AddArgument($Global:LogQueue)
-    [void]$Global:PowerShell.AddArgument($Global:ProgressQueue)
-    [void]$Global:PowerShell.AddArgument($Global:FinishedQueue)
+    @($CurrentDir, $Global:RegFiles, $SelectedTasks, $Global:LogQueue, $Global:ProgressQueue, $Global:FinishedQueue) | ForEach-Object {
+        [void]$Global:PowerShell.AddArgument($_)
+    }
     
     $Global:AsyncResult = $Global:PowerShell.BeginInvoke()
 
     $Timer = New-Object System.Windows.Threading.DispatcherTimer
     $Timer.Interval = [TimeSpan]::FromMilliseconds(50)
-
     $Timer.Add_Tick({
-        param($sender, $e)
-
-        $msg = ""
-        while ($Global:LogQueue.TryDequeue([ref]$msg)) {
-            Write-GuiLog $msg
-        }
-
-        $prog = $null
-        while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
-            $CleanProgress.Value = $prog.Value
-            $TxtProgressPercent.Text = "$($prog.Value)%"
-            $TxtStatus.Text = $prog.Status
+        $msg = ""; while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
+        $prog = $null; while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
+            $CleanProgress.Value = $prog.Value; $TxtProgressPercent.Text = "$($prog.Value)%"; $TxtStatus.Text = $prog.Status
         }
 
         $isDone = $false
         if ($Global:FinishedQueue.TryDequeue([ref]$isDone) -or ($Global:AsyncResult -and $Global:AsyncResult.IsCompleted)) {
-            # Flush output queues before finishing
             while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
             while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
-                $CleanProgress.Value = $prog.Value
-                $TxtProgressPercent.Text = "$($prog.Value)%"
-                $TxtStatus.Text = $prog.Status
+                $CleanProgress.Value = $prog.Value; $TxtProgressPercent.Text = "$($prog.Value)%"; $TxtStatus.Text = $prog.Status
             }
 
-            $sender.Stop()
-            
-            try { if ($Global:PowerShell) { $Global:PowerShell.EndInvoke($Global:AsyncResult) } } catch {}
-            try { if ($Global:PowerShell) { $Global:PowerShell.Dispose() } } catch {}
-            try { if ($Global:Runspace) { $Global:Runspace.Dispose() } } catch {}
+            $this.Stop()
+            try { $Global:PowerShell.Dispose(); $Global:Runspace.Dispose() } catch {}
 
-            $DriveEnd = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-            $SpaceSavedBytes = $DriveEnd.FreeSpace - $Global:StartingFreeSpace
+            # Stop Animations & Convert Fill to Solid Accent Color
+            Stop-ButtonSpinner
+            Stop-ProgressBarShimmer
+            $CleanProgress.Value = 100
+
+            $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
+            $EndFreeSpace = $DriveC.AvailableFreeSpace
+            $SpaceSavedBytes = $EndFreeSpace - $Global:StartingFreeSpace
             $ReadableSpace = if ($SpaceSavedBytes -le 0) { "0 MB" } elseif ($SpaceSavedBytes -gt 1GB) { "$([Math]::Round($SpaceSavedBytes / 1GB, 2)) GB" } else { "$([Math]::Round($SpaceSavedBytes / 1MB, 2)) MB" }
 
             $TxtReclaimed.Text = $ReadableSpace
-            
-            # Re-enable controls
             $BtnStart.IsEnabled = $true
             $BtnStart.Content = "Finished"
-            $BtnStart.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#28A745")
-
-            $BtnProfileDefault.IsEnabled = $true
-            $BtnProfileServer.IsEnabled  = $true
-            $BtnProfileCustom.IsEnabled  = $true
-            $ChkTempFiles.IsEnabled      = $true
-            $ChkRecycleBin.IsEnabled     = $true
-            $ChkCleanmgr.IsEnabled       = $true
-            $ChkFlushDNS.IsEnabled       = $true
-            $ChkDism.IsEnabled           = $true
+            $BtnStart.Tag = "Finished"
+            $BtnStart.Background = $BrushFinishBG
+            $BtnStart.Foreground = $BrushFinishFG
+            $InteractiveControls | ForEach-Object { $_.IsEnabled = $true }
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
-            
-            # Automatically save the session log and trim log history to 5 files
             Save-LogAndMaintainHistory
         }
     })
-
     $Timer.Start()
 })
 

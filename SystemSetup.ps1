@@ -59,7 +59,22 @@ catch {
     exit
 }
 
-# 4. Create Desktop Shortcut
+# 4. Install smartmontools via winget
+Write-Host "Checking dependency: smartmontools..." -ForegroundColor White
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+    try {
+        Write-Host "Installing smartmontools..." -ForegroundColor Yellow
+        winget install --id smartmontools.smartmontools --exact --silent --accept-source-agreements --accept-package-agreements *>$null
+        Write-Host "smartmontools installation process completed." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Failed to install smartmontools via winget: $($_.Exception.Message)"
+    }
+} else {
+    Write-Warning "winget is not available on this system. Skipping smartmontools installation."
+}
+
+# 5. Create Desktop Shortcut
 try {
     $desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
     $shortcutPath = Join-Path $desktopPath "$shortcutName.lnk"
