@@ -11,7 +11,7 @@ on:
 
 jobs:
   build_all:
-    name: Build System and Server Versions
+    name: Build
     runs-on: windows-2025-vs2026
 
     steps:
@@ -32,28 +32,13 @@ jobs:
         New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
         
         # Compile Tool into the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '2.0.1'"
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -version '3.0.0'"
         
         # Compile System-specific Installer (Renamed from installer.ps1 to SystemSetup.ps1)
-        pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '1.0.0'"
+        pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -version '3.0.0'"
         
         # Copy assets
-        Copy-Item "SystemCleanUp\*.reg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
-      shell: pwsh
-
-    # --- SERVER CLEANUP BUILD ---
-    - name: Prepare Server Staging
-      run: |
-        New-Item -ItemType Directory -Path "Staging_Server\ServerCleanUp" -Force
-        
-        # Compile Tool into the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUpServer.ps1 -OutputFile 'Staging_Server\ServerCleanUp\Server CleanUp.exe' -IconFile icon.ico -version '2.0.1'"
-        
-        # Compile Server-specific Installer (Newly added ServerSetup.ps1)
-        pwsh -Command "ps2exe -InputFile ServerSetup.ps1 -OutputFile 'Staging_Server\Setup-Server.exe' -IconFile icon.ico -version '1.0.0'"
-        
-        # Copy assets
-        Copy-Item "ServerCleanUp\*.reg" -Destination "Staging_Server\ServerCleanUp\" -ErrorAction SilentlyContinue
+        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests
@@ -64,15 +49,11 @@ jobs:
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\SystemCleanUp\System CleanUp.exe";#1
         & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_System\Setup.exe";#1
         
-        # Server Files
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\ServerCleanUp\Server CleanUp.exe";#1
-        & $mtPath -manifest elevate.manifest.xml -outputresource:"Staging_Server\Setup-Server.exe";#1
       shell: pwsh
 
     - name: Create ZIP Archives
       run: |
         Compress-Archive -Path "Staging_System\*" -DestinationPath "SystemCleanUp.zip"
-        Compress-Archive -Path "Staging_Server\*" -DestinationPath "ServerCleanUp.zip"
       shell: pwsh
 
     - name: Upload Artifacts
@@ -81,7 +62,6 @@ jobs:
         name: CleanUp-Executables
         path: |
           SystemCleanUp.zip
-          ServerCleanUp.zip
 
   create_release:
     name: Create Release
@@ -103,7 +83,6 @@ jobs:
         tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'beta-latest' }}
         files: |
           SystemCleanUp.zip
-          ServerCleanUp.zip
         draft: false
         prerelease: ${{ github.ref == 'refs/heads/main' || contains(github.ref_name, '-') }}
       env:
