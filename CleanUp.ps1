@@ -310,26 +310,14 @@ $Global:IsUpdatingProfile = $false
 $Global:HasAlertedHighTemp = $false
 $Global:DriveUIMap = @{}
 
-# --- HIGH TEMPERATURE SOUND EFFECT (WITH MULTI-BACKEND FALLBACK) ---
+# --- HIGH TEMPERATURE ALERT TONE FUNCTION ---
 function Play-TempAlertSound {
-    [System.Threading.Tasks.Task]::Run([System.Action]{
-        try {
-            # Try console tones first
-            for ($i = 0; $i -lt 4; $i++) {
-                [Console]::Beep(1200, 150)
-                Start-Sleep -Milliseconds 50
-                [Console]::Beep(800, 150)
-                Start-Sleep -Milliseconds 50
-            }
-        } catch {}
-        
-        # Windows System Audio Fallback
-        try {
-            [System.Media.SystemSounds]::Hand.Play()
-            Start-Sleep -Milliseconds 250
-            [System.Media.SystemSounds]::Exclamation.Play()
-        } catch {}
-    }) | Out-Null
+    for ($i = 0; $i -lt 4; $i++) {
+        [Console]::Beep(1200, 150)
+        Start-Sleep -Milliseconds 50
+        [Console]::Beep(800, 150)
+        Start-Sleep -Milliseconds 50
+    }
 }
 
 # --- ANIMATION CONTROLS ---
@@ -554,26 +542,42 @@ function Update-DriveHealthAndTemp {
             $CyclesStr = "N/A"
             $UnsafeStr = "N/A"
 
-            # 1. Fetch smartctl JSON
+            # 1. Primary NVMe / SSD Temperature query via Windows Storage Reliability Counter
+            $StorageStats = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+            if ($StorageStats -and $StorageStats.Temperature) {
+                $RawTemp = [int]$StorageStats.Temperature
+                $TempStr = "$RawTemp °C"
+                if ($RawTemp -ge 70) {
+                    $TempHex = $HexRed
+                    $IsHighTempDetected = $true
+                } elseif ($RawTemp -ge 50) {
+                    $TempHex = $HexAmber
+                } else {
+                    $TempHex = $HexGreen
+                }
+            }
+
+            # 2. Fetch smartctl JSON for detailed SMART attributes
             $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
 
             if ($Json) {
-                # Temperature Evaluation (Green -> Amber -> Red)
-                $RawTemp = $null
-                if ($Json.temperature.current) {
-                    $RawTemp = [int]$Json.temperature.current
-                } elseif ($Json.nvme_smart_health_information_log.temperature) {
-                    $RawTemp = [int]$Json.nvme_smart_health_information_log.temperature
-                }
-
-                if ($null -ne $RawTemp) {
-                    $TempStr = "$RawTemp °C"
-                    if ($RawTemp -ge 70) {
-                        $TempHex = $HexRed
-                        $IsHighTempDetected = $true
+                # Fallback Temperature query if StorageReliabilityCounter returned null
+                if ($TempStr -eq "N/A") {
+                    $RawTemp = $null
+                    if ($Json.temperature.current) {
+                        $RawTemp = [int]$Json.temperature.current
+                    } elseif ($Json.nvme_smart_health_information_log.temperature) {
+                        $RawTemp = [int]$Json.nvme_smart_health_information_log.temperature
                     }
-                    elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
-                    else { $TempHex = $HexGreen }
+
+                    if ($null -ne $RawTemp) {
+                        $TempStr = "$RawTemp °C"
+                        if ($RawTemp -ge 70) {
+                            $TempHex = $HexRed
+                            $IsHighTempDetected = $true
+                        } elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
+                        else { $TempHex = $HexGreen }
+                    }
                 }
 
                 # Health / Wear Evaluation
@@ -590,21 +594,21 @@ function Update-DriveHealthAndTemp {
                     $HealthHex = $HexGreen
                 }
 
-                # Power-On Hours (White)
+                # Power-On Hours
                 if ($Json.power_on_time.hours) {
                     $HoursStr = "$($Json.power_on_time.hours) hrs"
                 } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
                     $HoursStr = "$($Json.nvme_smart_health_information_log.power_on_hours) hrs"
                 }
 
-                # Power Cycles (White)
+                # Power Cycles
                 if ($Json.power_cycle_count) {
                     $CyclesStr = "$($Json.power_cycle_count)"
                 } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
                     $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
                 }
 
-                # Unsafe Shutdowns (White)
+                # Unsafe Shutdowns
                 $RawUnsafe = $null
                 if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
                     $RawUnsafe = [int]$Json.nvme_smart_health_information_log.unsafe_shutdowns
@@ -618,7 +622,7 @@ function Update-DriveHealthAndTemp {
                 if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
             }
 
-            # 2. Update UI Cards
+            # 3. Update UI Cards
             $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
             if ($DiskObj) {
                 $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
@@ -646,12 +650,12 @@ function Update-DriveHealthAndTemp {
             }
         }
 
-        # 3. Sound Alarm Trigger (Triggers once when reaching 70°C+)
+        # 4. Sound Alert Trigger (Plays on GUI main thread so Beep works)
         if ($IsHighTempDetected) {
             if (-not $Global:HasAlertedHighTemp) {
                 $Global:HasAlertedHighTemp = $true
-                Play-TempAlertSound
                 Write-GuiLog "[!] ALERT: High disk temperature detected (>= 70°C)!"
+                Play-TempAlertSound
             }
         } else {
             $Global:HasAlertedHighTemp = $false
