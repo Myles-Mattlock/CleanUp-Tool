@@ -76,7 +76,13 @@ function Start-SelfUpdate {
         return
     }
     try {
-        $process = Start-Process -FilePath $updaterPath -ArgumentList @('-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Normal -PassThru -ErrorAction Stop
+        $arguments = @(
+            "-DownloadUrl `"$DownloadUrl`""
+            "-TargetDirectory `"$TargetDirectory`""
+            "-ApplicationPath `"$ApplicationPath`""
+            "-ParentProcessId $ParentProcessId"
+        ) -join ' '
+        $process = Start-Process -FilePath $updaterPath -ArgumentList $arguments -WindowStyle Normal -PassThru -ErrorAction Stop
         Write-GuiLog "Updater started (PID $($process.Id))."
         $Window.Close()
     } catch {
