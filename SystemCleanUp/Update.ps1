@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $form = New-Object Windows.Forms.Form
@@ -59,7 +60,7 @@ try {
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
     Set-UpdateStatus 'Extracting update package...'
     Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
-    Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
 
     $payload = Join-Path $extractPath 'SystemCleanUp'
     $newApplication = Join-Path $payload 'System CleanUp.exe'
