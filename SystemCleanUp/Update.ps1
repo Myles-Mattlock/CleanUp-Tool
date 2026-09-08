@@ -6,14 +6,49 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$form = New-Object Windows.Forms.Form
+$form.Text = 'System CleanUp Update'
+$form.Size = New-Object Drawing.Size(520, 170)
+$form.StartPosition = 'CenterScreen'
+$form.FormBorderStyle = 'FixedDialog'
+$form.ControlBox = $false
+$form.TopMost = $true
+
+$status = New-Object Windows.Forms.Label
+$status.Location = New-Object Drawing.Point(24, 22)
+$status.Size = New-Object Drawing.Size(450, 30)
+$status.Font = New-Object Drawing.Font('Segoe UI', 10)
+$form.Controls.Add($status)
+
+$progress = New-Object Windows.Forms.ProgressBar
+$progress.Location = New-Object Drawing.Point(24, 68)
+$progress.Size = New-Object Drawing.Size(450, 24)
+$progress.Style = 'Marquee'
+$progress.MarqueeAnimationSpeed = 25
+$form.Controls.Add($progress)
+$form.Show()
+
+function Set-UpdateStatus {
+    param([string]$Message)
+    $status.Text = $Message
+    $form.Refresh()
+    [System.Windows.Forms.Application]::DoEvents()
+    Add-Content -LiteralPath $logPath -Value $Message
+}
+
 $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'SystemCleanUpUpdater.log'
 $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'SystemCleanUpUpdate.zip'
 $extractPath = Join-Path ([System.IO.Path]::GetTempPath()) 'SystemCleanUpUpdate'
 
 try {
     Set-Content -LiteralPath $logPath -Value 'Updater started.'
-    Add-Content -LiteralPath $logPath -Value 'Downloading release asset.'
+    Set-UpdateStatus 'Downloading update package...'
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
+    Set-UpdateStatus 'Extracting update package...'
     Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
 
@@ -23,9 +58,9 @@ try {
         throw 'The release ZIP does not contain SystemCleanUp\System CleanUp.exe.'
     }
 
+    Set-UpdateStatus "Waiting for System CleanUp to close..."
     Add-Content -LiteralPath $logPath -Value "Target directory: $TargetDirectory"
     Add-Content -LiteralPath $logPath -Value "Application path: $ApplicationPath"
-    Add-Content -LiteralPath $logPath -Value "Waiting for process $ParentProcessId to exit."
     $deadline = (Get-Date).AddSeconds(30)
     while ((Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 250
@@ -34,7 +69,7 @@ try {
         throw 'The application did not exit within 30 seconds.'
     }
 
-    Add-Content -LiteralPath $logPath -Value 'Replacing installed files.'
+    Set-UpdateStatus 'Installing updated application files...'
     if (-not (Test-Path $TargetDirectory)) { New-Item -ItemType Directory -Path $TargetDirectory -Force | Out-Null }
     $files = Get-ChildItem -LiteralPath $payload -Force
     foreach ($file in $files) {
@@ -44,16 +79,26 @@ try {
         } else {
             Copy-Item -LiteralPath $file.FullName -Destination $destination -Force -ErrorAction Stop
         }
-        Add-Content -LiteralPath $logPath -Value "Copied $($file.Name)"
+        Set-UpdateStatus "Installing $($file.Name)..."
     }
     Unblock-File -LiteralPath $ApplicationPath -ErrorAction SilentlyContinue
-    Add-Content -LiteralPath $logPath -Value 'Starting updated application.'
+    Set-UpdateStatus 'Starting updated application...'
     Start-Process -FilePath $ApplicationPath
+    $status.Text = 'Update complete.'
+    $progress.Style = 'Continuous'
+    $progress.Value = 100
+    $form.Refresh()
+    Start-Sleep -Milliseconds 500
 } catch {
     Add-Content -LiteralPath $logPath -Value "Update failed: $($_.Exception.Message)"
-    Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
-    [System.Windows.MessageBox]::Show("Update failed: $($_.Exception.Message)", 'System CleanUp Update', 'OK', 'Error') | Out-Null
+    $status.Text = "Update failed: $($_.Exception.Message)"
+    $progress.Style = 'Continuous'
+    $progress.Value = 0
+    $form.ControlBox = $true
+    $form.Refresh()
+    [System.Windows.Forms.MessageBox]::Show("Update failed: $($_.Exception.Message)`n`nLog: $logPath", 'System CleanUp Update', 'OK', 'Error') | Out-Null
 } finally {
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+    $form.Close()
 }
