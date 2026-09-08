@@ -23,6 +23,8 @@ try {
         throw 'The release ZIP does not contain SystemCleanUp\System CleanUp.exe.'
     }
 
+    Add-Content -LiteralPath $logPath -Value "Target directory: $TargetDirectory"
+    Add-Content -LiteralPath $logPath -Value "Application path: $ApplicationPath"
     Add-Content -LiteralPath $logPath -Value "Waiting for process $ParentProcessId to exit."
     $deadline = (Get-Date).AddSeconds(30)
     while ((Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
@@ -33,7 +35,17 @@ try {
     }
 
     Add-Content -LiteralPath $logPath -Value 'Replacing installed files.'
-    Copy-Item (Join-Path $payload '*') $TargetDirectory -Recurse -Force
+    if (-not (Test-Path $TargetDirectory)) { New-Item -ItemType Directory -Path $TargetDirectory -Force | Out-Null }
+    $files = Get-ChildItem -LiteralPath $payload -Force
+    foreach ($file in $files) {
+        $destination = Join-Path $TargetDirectory $file.Name
+        if ($file.PSIsContainer) {
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Recurse -Force -ErrorAction Stop
+        } else {
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force -ErrorAction Stop
+        }
+        Add-Content -LiteralPath $logPath -Value "Copied $($file.Name)"
+    }
     Unblock-File -LiteralPath $ApplicationPath -ErrorAction SilentlyContinue
     Add-Content -LiteralPath $logPath -Value 'Starting updated application.'
     Start-Process -FilePath $ApplicationPath
