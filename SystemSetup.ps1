@@ -156,7 +156,10 @@ $install.Add_Click({
         New-ItemProperty $UninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
         New-ItemProperty $UninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
         New-ItemProperty $UninstallKey -Name InstallDate -Value (Get-Date -Format 'yyyyMMdd') -PropertyType String -Force | Out-Null
-        $uninstallCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"Remove-Item -LiteralPath '$target' -Recurse -Force`""
+        $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) "$AppName.lnk"
+        $startMenuShortcut = Join-Path (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) $AppName) "$AppName.lnk"
+        $uninstallScript = "Remove-Item -LiteralPath '$desktopShortcut' -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '$startMenuShortcut' -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath (Split-Path -Parent '$startMenuShortcut') -Force -Recurse -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '$target' -Force -Recurse -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '$UninstallKey' -Force -Recurse -ErrorAction SilentlyContinue"
+        $uninstallCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"$uninstallScript`""
         New-ItemProperty $UninstallKey -Name UninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name QuietUninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null
         $status.Text = 'Installation complete.'
