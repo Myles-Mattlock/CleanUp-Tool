@@ -120,11 +120,12 @@ $install.Add_Click({
         if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
         $status.Text = 'Copying application files...'
         $targetRoot = [System.IO.Path]::GetFullPath($target).TrimEnd('\')
-        if ($sourceRoot -ne $targetRoot) {
-            Get-ChildItem -LiteralPath $SourcePath -Force |
+        $sourceIsTarget = [string]::Equals($sourceRoot, $targetRoot, [System.StringComparison]::OrdinalIgnoreCase)
+        $sourceIsInsideTarget = $sourceRoot.StartsWith("$targetRoot\", [System.StringComparison]::OrdinalIgnoreCase)
+        if (-not $sourceIsTarget -and -not $sourceIsInsideTarget) {
+            Get-ChildItem -LiteralPath $SourcePath -File -Force |
                 Where-Object { $_.Name -notin @('.DS_Store', '__MACOSX') } |
-                Copy-Item -Destination $target -Recurse -Force -ErrorAction Stop
-            Get-ChildItem $target -Recurse -Force | Where-Object { $_.Name -ne '.DS_Store' } | Unblock-File -ErrorAction SilentlyContinue
+                Copy-Item -Destination $target -Force -ErrorAction Stop
         }
         $executablePath = Join-Path $target $ExeName
         $shell = New-Object -ComObject WScript.Shell
@@ -140,15 +141,21 @@ $install.Add_Click({
         if ($startMenu.Checked) {
             $menu = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) $AppName
             New-Item -ItemType Directory -Path $menu -Force | Out-Null
-            & $createShortcut (Join-Path $menu "$AppName.lnk")
+            $startShortcut = Join-Path $menu "$AppName.lnk"
+            & $createShortcut $startShortcut
         }
         New-Item $UninstallKey -Force | Out-Null
         New-ItemProperty $UninstallKey -Name DisplayName -Value $AppName -PropertyType String -Force | Out-Null
-        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '3.0.0' -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '3.0.1' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name Publisher -Value 'Myles Mattlock' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name InstallLocation -Value $target -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name DisplayIcon -Value $executablePath -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name InstallDate -Value (Get-Date -Format 'yyyyMMdd') -PropertyType String -Force | Out-Null
         $uninstallCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"Remove-Item -LiteralPath '$target' -Recurse -Force`""
         New-ItemProperty $UninstallKey -Name UninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name QuietUninstallString -Value $uninstallCommand -PropertyType String -Force | Out-Null
         $status.Text = 'Installation complete.'
         [Windows.Forms.MessageBox]::Show('System CleanUp was installed successfully.', "$AppName Setup", 'OK', 'Information')
         $form.Close()

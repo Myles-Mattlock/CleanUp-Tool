@@ -43,7 +43,7 @@ Add-Type -MemberDefinition @"
 "@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.0" 
+$Global:CurrentVersion = "3.0.1" 
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
@@ -204,7 +204,7 @@ $HexMuted = "#888888"
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
