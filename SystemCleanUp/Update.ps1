@@ -45,6 +45,15 @@ $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'SystemCleanUpUpdate.zip'
 $extractPath = Join-Path ([System.IO.Path]::GetTempPath()) 'SystemCleanUpUpdate'
 
 try {
+    if ($DownloadUrl -notmatch '/releases/download/[^/]+/SystemCleanUp\.zip$') {
+        throw 'DownloadUrl must be the direct SystemCleanUp.zip release asset URL, not the GitHub release page.'
+    }
+    if (-not (Test-Path -LiteralPath $TargetDirectory -PathType Container)) {
+        throw "Target directory was not found: $TargetDirectory"
+    }
+    if ([System.IO.Path]::GetExtension($ApplicationPath) -ne '.exe') {
+        throw "ApplicationPath must point to System CleanUp.exe: $ApplicationPath"
+    }
     Set-Content -LiteralPath $logPath -Value 'Updater started.'
     Set-UpdateStatus 'Downloading update package...'
     Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
@@ -96,7 +105,7 @@ try {
     $progress.Value = 0
     $form.ControlBox = $true
     $form.Refresh()
-    [System.Windows.Forms.MessageBox]::Show("Update failed: $($_.Exception.Message)`n`nLog: $logPath", 'System CleanUp Update', 'OK', 'Error') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show("Update failed: $($_.Exception.Message)`n`nLog: $logPath", 'System CleanUp Update', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
 } finally {
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
