@@ -66,7 +66,7 @@ ps2exe -InputFile .\CleanUp.ps1 `
 	   -description 'Windows system cleanup utility' `
 	   -company 'Myles Mattlock' `
 	   -product 'Myles Mattlock System CleanUp' `
-	   -version '2.0.0'
+	   -version '3.0.1'
 
 ps2exe -InputFile .\SystemSetup.ps1 `
 	   -OutputFile '.\Staging_System\Setup.exe' `
@@ -75,7 +75,7 @@ ps2exe -InputFile .\SystemSetup.ps1 `
 	   -description 'Myles Mattlock System CleanUp installer' `
 	   -company 'Myles Mattlock' `
 	   -product 'Myles Mattlock System CleanUp' `
-	   -version '2.0.0'
+	   -version '3.0.1'
 
 Copy-Item .\SystemCleanUp\*.reg, .\SystemCleanUp\*.jpg `
 		  -Destination .\Staging_System\SystemCleanUp\
@@ -86,7 +86,7 @@ ps2exe -InputFile .\SystemCleanUp\Update.ps1 `
 		  -description 'System CleanUp update helper' `
 		  -company 'Myles Mattlock' `
 		  -product 'Myles Mattlock System CleanUp' `
-		  -version '2.0.0'
+		  -version '3.0.1'
 ```
 
 Find the Windows SDK manifest tool and embed the administrator manifest in both executables:
