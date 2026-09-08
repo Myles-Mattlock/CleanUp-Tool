@@ -127,6 +127,9 @@ $install.Add_Click({
                 Where-Object { $_.Name -notin @('.DS_Store', '__MACOSX') } |
                 Copy-Item -Destination $target -Force -ErrorAction Stop
         }
+        Get-ChildItem -LiteralPath $target -File -Force |
+            Where-Object { $_.Name -notin @('.DS_Store', '__MACOSX') } |
+            Unblock-File -ErrorAction SilentlyContinue
         $executablePath = Join-Path $target $ExeName
         $shell = New-Object -ComObject WScript.Shell
         $createShortcut = {
