@@ -43,8 +43,9 @@ Add-Type -MemberDefinition @"
 "@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.1" 
+$Global:CurrentVersion = "2.0.0"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
+$Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
@@ -62,6 +63,17 @@ $HexAmber = "#FACC15"
 $HexRed   = "#F87171"
 $HexWhite = "#FFFFFF"
 $HexMuted = "#888888"
+
+function Start-SelfUpdate {
+    param([string]$DownloadUrl, [string]$TargetDirectory, [string]$ApplicationPath, [int]$ParentProcessId)
+    $updaterPath = Join-Path $TargetDirectory 'Update.ps1'
+    if ([string]::IsNullOrWhiteSpace($DownloadUrl) -or -not (Test-Path $updaterPath)) {
+        [System.Windows.Forms.MessageBox]::Show("The update helper is missing. Download the latest release manually.", 'System CleanUp', 'OK', 'Warning')
+        return
+    }
+    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $updaterPath, '-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Hidden
+    $Window.Close()
+}
 
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
@@ -204,7 +216,7 @@ $HexMuted = "#888888"
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v2.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
@@ -760,7 +772,8 @@ $Window.Add_Loaded({
             $HasUpdate = $false
             foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
                 if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
-                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "[!] UPDATE AVAILABLE: $($Rel.tag_name)" })
+                    $Asset = $Rel.assets | Where-Object { $_.name -eq "SystemCleanUp.zip" } | Select-Object -First 1
+                    $InitQueue.Enqueue(@{ Type = "Update"; Msg = "Version $($Rel.tag_name) is available."; Url = $Asset.browser_download_url })
                     $HasUpdate = $true; break
                 }
             }
@@ -784,6 +797,14 @@ $Window.Add_Loaded({
         $item = $null
         while ($Global:InitQueue.TryDequeue([ref]$item)) {
             if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
+            elseif ($item.Type -eq "Update" -and -not $Global:UpdatePromptShown) {
+                $Global:UpdatePromptShown = $true
+                $choice = [System.Windows.Forms.MessageBox]::Show("$($item.Msg)`n`nDownload and install it now?", "System CleanUp Update", 'YesNo', 'Information')
+                if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    $applicationPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+                    Start-SelfUpdate -DownloadUrl $item.Url -TargetDirectory $CurrentDir -ApplicationPath $applicationPath -ParentProcessId ([System.Diagnostics.Process]::GetCurrentProcess().Id)
+                }
+            }
         }
         if ($InitAsync.IsCompleted) {
             $this.Stop()

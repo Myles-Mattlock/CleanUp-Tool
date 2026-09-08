@@ -149,7 +149,7 @@ $install.Add_Click({
         }
         New-Item $UninstallKey -Force | Out-Null
         New-ItemProperty $UninstallKey -Name DisplayName -Value $AppName -PropertyType String -Force | Out-Null
-        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '3.0.1' -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '2.0.0' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name Publisher -Value 'Myles Mattlock' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name InstallLocation -Value $target -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name DisplayIcon -Value $executablePath -PropertyType String -Force | Out-Null

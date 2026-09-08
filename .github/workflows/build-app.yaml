@@ -32,13 +32,13 @@ jobs:
         New-Item -ItemType Directory -Path "Staging_System\SystemCleanUp" -Force
         
         # Compile Tool into the subfolder
-        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -title 'System CleanUp' -description 'Windows system cleanup utility' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '3.0.1'"
+        pwsh -Command "ps2exe -InputFile CleanUp.ps1 -OutputFile 'Staging_System\SystemCleanUp\System CleanUp.exe' -IconFile icon.ico -title 'System CleanUp' -description 'Windows system cleanup utility' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '2.0.0'"
         
         # Compile System-specific Installer (Renamed from installer.ps1 to SystemSetup.ps1)
-        pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -title 'System CleanUp Setup' -description 'Myles Mattlock System CleanUp installer' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '3.0.1'"
+        pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -title 'System CleanUp Setup' -description 'Myles Mattlock System CleanUp installer' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '2.0.0'"
         
         # Copy assets
-        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
+        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg", "SystemCleanUp\Update.ps1" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests

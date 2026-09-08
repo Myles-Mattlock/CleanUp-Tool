@@ -39,6 +39,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\CleanUp.ps1
 
 The application self-elevates with UAC when needed. The main script uses the registry files and image assets relative to its own directory, so keep the repository layout intact.
 
+When a newer non-prerelease GitHub release is available, the application asks whether to update. Accepting downloads the `SystemCleanUp.zip` release asset, extracts it, replaces the installed application after the current process exits, and starts the updated executable. The automatic updater requires the packaged executable layout and the release asset to be named `SystemCleanUp.zip`.
+
 To test the installer source directly:
 
 ```powershell
@@ -64,7 +66,7 @@ ps2exe -InputFile .\CleanUp.ps1 `
 	   -description 'Windows system cleanup utility' `
 	   -company 'Myles Mattlock' `
 	   -product 'Myles Mattlock System CleanUp' `
-	   -version '3.0.1'
+	   -version '2.0.0'
 
 ps2exe -InputFile .\SystemSetup.ps1 `
 	   -OutputFile '.\Staging_System\Setup.exe' `
@@ -73,7 +75,7 @@ ps2exe -InputFile .\SystemSetup.ps1 `
 	   -description 'Myles Mattlock System CleanUp installer' `
 	   -company 'Myles Mattlock' `
 	   -product 'Myles Mattlock System CleanUp' `
-	   -version '3.0.1'
+	   -version '2.0.0'
 
 Copy-Item .\SystemCleanUp\*.reg, .\SystemCleanUp\*.jpg `
 		  -Destination .\Staging_System\SystemCleanUp\
@@ -109,6 +111,7 @@ Staging_System\
 	DiskCleanupSettings2.reg
 	Logo.jpg
 	LogoRight.jpg
+	Update.ps1
 ```
 
 Run `Setup.exe` from this layout or from the ZIP after extracting it. Do not remove the `SystemCleanUp` subfolder beside `Setup.exe`; the installer uses it as its source payload.
