@@ -43,8 +43,9 @@ Add-Type -MemberDefinition @"
 "@ -Name "DwmApi" -Namespace "Win32" | Out-Null
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.1" 
+$Global:CurrentVersion = "3.0.1"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
+$Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
@@ -62,6 +63,32 @@ $HexAmber = "#FACC15"
 $HexRed   = "#F87171"
 $HexWhite = "#FFFFFF"
 $HexMuted = "#888888"
+
+function Start-SelfUpdate {
+    param([string]$DownloadUrl, [string]$TargetDirectory, [string]$ApplicationPath, [int]$ParentProcessId)
+    $updaterPath = Join-Path $TargetDirectory 'Update.exe'
+    if ([string]::IsNullOrWhiteSpace($DownloadUrl)) {
+        [System.Windows.Forms.MessageBox]::Show('The update package URL was empty. Download the latest release manually.', 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf)) {
+        [System.Windows.Forms.MessageBox]::Show("The update helper was not found:`n$updaterPath`n`nReinstall the latest package.", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    try {
+        $arguments = @(
+            "-DownloadUrl `"$DownloadUrl`""
+            "-TargetDirectory `"$TargetDirectory`""
+            "-ApplicationPath `"$ApplicationPath`""
+            "-ParentProcessId $ParentProcessId"
+        ) -join ' '
+        $process = Start-Process -FilePath $updaterPath -ArgumentList $arguments -WindowStyle Normal -PassThru -ErrorAction Stop
+        Write-GuiLog "Updater started (PID $($process.Id))."
+        $Window.Close()
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Could not start the update helper:`n$($_.Exception.Message)`n`nPath: $updaterPath", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    }
+}
 
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
@@ -760,7 +787,12 @@ $Window.Add_Loaded({
             $HasUpdate = $false
             foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
                 if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
-                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "[!] UPDATE AVAILABLE: $($Rel.tag_name)" })
+                    $Asset = $Rel.assets | Where-Object { $_.name -eq "SystemCleanUp.zip" } | Select-Object -First 1
+                    if ($null -ne $Asset -and -not [string]::IsNullOrWhiteSpace($Asset.browser_download_url)) {
+                        $InitQueue.Enqueue(@{ Type = "Update"; Msg = "Version $($Rel.tag_name) is available."; Url = $Asset.browser_download_url })
+                        $HasUpdate = $true; break
+                    }
+                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Version $($Rel.tag_name) is available, but SystemCleanUp.zip was not found." })
                     $HasUpdate = $true; break
                 }
             }
@@ -784,6 +816,14 @@ $Window.Add_Loaded({
         $item = $null
         while ($Global:InitQueue.TryDequeue([ref]$item)) {
             if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
+            elseif ($item.Type -eq "Update" -and -not $Global:UpdatePromptShown) {
+                $Global:UpdatePromptShown = $true
+                $choice = [System.Windows.Forms.MessageBox]::Show("$($item.Msg)`n`nDownload and install it now?", "System CleanUp Update", 'YesNo', 'Information')
+                if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    $applicationPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+                    Start-SelfUpdate -DownloadUrl $item.Url -TargetDirectory $CurrentDir -ApplicationPath $applicationPath -ParentProcessId ([System.Diagnostics.Process]::GetCurrentProcess().Id)
+                }
+            }
         }
         if ($InitAsync.IsCompleted) {
             $this.Stop()
