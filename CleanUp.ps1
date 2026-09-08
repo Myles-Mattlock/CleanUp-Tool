@@ -67,12 +67,21 @@ $HexMuted = "#888888"
 function Start-SelfUpdate {
     param([string]$DownloadUrl, [string]$TargetDirectory, [string]$ApplicationPath, [int]$ParentProcessId)
     $updaterPath = Join-Path $TargetDirectory 'Update.exe'
-    if ([string]::IsNullOrWhiteSpace($DownloadUrl) -or -not (Test-Path $updaterPath)) {
-        [System.Windows.Forms.MessageBox]::Show("The update helper is missing. Download the latest release manually.", 'System CleanUp', 'OK', 'Warning')
+    if ([string]::IsNullOrWhiteSpace($DownloadUrl)) {
+        [System.Windows.Forms.MessageBox]::Show('The update package URL was empty. Download the latest release manually.', 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
         return
     }
-    Start-Process -FilePath $updaterPath -ArgumentList @('-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Hidden
-    $Window.Close()
+    if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf)) {
+        [System.Windows.Forms.MessageBox]::Show("The update helper was not found:`n$updaterPath`n`nReinstall the latest package.", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    try {
+        $process = Start-Process -FilePath $updaterPath -ArgumentList @('-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Normal -PassThru -ErrorAction Stop
+        Write-GuiLog "Updater started (PID $($process.Id))."
+        $Window.Close()
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Could not start the update helper:`n$($_.Exception.Message)`n`nPath: $updaterPath", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    }
 }
 
 # --- XAML UI DESIGN ---
@@ -773,7 +782,11 @@ $Window.Add_Loaded({
             foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
                 if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
                     $Asset = $Rel.assets | Where-Object { $_.name -eq "SystemCleanUp.zip" } | Select-Object -First 1
-                    $InitQueue.Enqueue(@{ Type = "Update"; Msg = "Version $($Rel.tag_name) is available."; Url = $Asset.browser_download_url })
+                    if ($null -ne $Asset -and -not [string]::IsNullOrWhiteSpace($Asset.browser_download_url)) {
+                        $InitQueue.Enqueue(@{ Type = "Update"; Msg = "Version $($Rel.tag_name) is available."; Url = $Asset.browser_download_url })
+                        $HasUpdate = $true; break
+                    }
+                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Version $($Rel.tag_name) is available, but SystemCleanUp.zip was not found." })
                     $HasUpdate = $true; break
                 }
             }
