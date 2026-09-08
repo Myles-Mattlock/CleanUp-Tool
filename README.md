@@ -79,6 +79,14 @@ ps2exe -InputFile .\SystemSetup.ps1 `
 
 Copy-Item .\SystemCleanUp\*.reg, .\SystemCleanUp\*.jpg `
 		  -Destination .\Staging_System\SystemCleanUp\
+
+ps2exe -InputFile .\SystemCleanUp\Update.ps1 `
+		  -OutputFile '.\Staging_System\SystemCleanUp\Update.exe' `
+		  -title 'System CleanUp Updater' `
+		  -description 'System CleanUp update helper' `
+		  -company 'Myles Mattlock' `
+		  -product 'Myles Mattlock System CleanUp' `
+		  -version '2.0.0'
 ```
 
 Find the Windows SDK manifest tool and embed the administrator manifest in both executables:
@@ -111,7 +119,7 @@ Staging_System\
 	DiskCleanupSettings2.reg
 	Logo.jpg
 	LogoRight.jpg
-	Update.ps1
+	Update.exe
 ```
 
 Run `Setup.exe` from this layout or from the ZIP after extracting it. Do not remove the `SystemCleanUp` subfolder beside `Setup.exe`; the installer uses it as its source payload.

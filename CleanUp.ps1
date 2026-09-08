@@ -66,12 +66,12 @@ $HexMuted = "#888888"
 
 function Start-SelfUpdate {
     param([string]$DownloadUrl, [string]$TargetDirectory, [string]$ApplicationPath, [int]$ParentProcessId)
-    $updaterPath = Join-Path $TargetDirectory 'Update.ps1'
+    $updaterPath = Join-Path $TargetDirectory 'Update.exe'
     if ([string]::IsNullOrWhiteSpace($DownloadUrl) -or -not (Test-Path $updaterPath)) {
         [System.Windows.Forms.MessageBox]::Show("The update helper is missing. Download the latest release manually.", 'System CleanUp', 'OK', 'Warning')
         return
     }
-    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $updaterPath, '-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Hidden
+    Start-Process -FilePath $updaterPath -ArgumentList @('-DownloadUrl', $DownloadUrl, '-TargetDirectory', $TargetDirectory, '-ApplicationPath', $ApplicationPath, '-ParentProcessId', $ParentProcessId) -WindowStyle Hidden
     $Window.Close()
 }
 

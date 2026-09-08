@@ -36,9 +36,12 @@ jobs:
         
         # Compile System-specific Installer (Renamed from installer.ps1 to SystemSetup.ps1)
         pwsh -Command "ps2exe -InputFile SystemSetup.ps1 -OutputFile 'Staging_System\Setup.exe' -IconFile icon.ico -title 'System CleanUp Setup' -description 'Myles Mattlock System CleanUp installer' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '2.0.0'"
+
+        # Compile the updater so the installed application does not depend on script execution policy.
+        pwsh -Command "ps2exe -InputFile SystemCleanUp\Update.ps1 -OutputFile 'Staging_System\SystemCleanUp\Update.exe' -title 'System CleanUp Updater' -description 'System CleanUp update helper' -company 'Myles Mattlock' -product 'Myles Mattlock System CleanUp' -version '2.0.0'"
         
         # Copy assets
-        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg", "SystemCleanUp\Update.ps1" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
+        Copy-Item "SystemCleanUp\*.reg", "SystemCleanUp\*.jpg" -Destination "Staging_System\SystemCleanUp\" -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Embed Admin Manifests
