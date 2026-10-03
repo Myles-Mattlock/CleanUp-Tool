@@ -1,11 +1,19 @@
-# --- 1. Administrator Check (Self-Elevating) ---
+# --- 1. Launch without a visible PowerShell console ---
+if ($env:CLEANUP_TOOL_HIDDEN -ne "1") {
+    $env:CLEANUP_TOOL_HIDDEN = "1"
+    $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    Exit
+}
+
+# --- 2. Administrator Check (Self-Elevating) ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
-        Start-Process -FilePath $ExePath -Verb RunAs
+        Start-Process -FilePath $ExePath -Verb RunAs -WindowStyle Hidden
     } else {
         $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs -WindowStyle Hidden
     }
     Exit
 }
