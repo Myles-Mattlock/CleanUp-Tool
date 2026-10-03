@@ -1,5 +1,6 @@
 # --- 1. Launch without a visible PowerShell console ---
-if ($env:CLEANUP_TOOL_HIDDEN -ne "1") {
+$HostProcessName = [System.Diagnostics.Process]::GetCurrentProcess().ProcessName
+if ($HostProcessName -match "^(powershell|pwsh)$" -and $env:CLEANUP_TOOL_HIDDEN -ne "1") {
     $env:CLEANUP_TOOL_HIDDEN = "1"
     $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
     Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
