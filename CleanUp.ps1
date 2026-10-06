@@ -1,50 +1,50 @@
-# --- 1. Administrator Check (Self-Elevating) ---
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms
+# --- 1. Launch without a visible PowerShell console ---
+$HostProcessName = [System.Diagnostics.Process]::GetCurrentProcess().ProcessName
+if ($HostProcessName -match "^(powershell|pwsh)$" -and $env:CLEANUP_TOOL_HIDDEN -ne "1") {
+    $env:CLEANUP_TOOL_HIDDEN = "1"
+    $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    Exit
+}
+
+# Hide the console window created by a console-based EXE conversion.
+if ($HostProcessName -notmatch "^(powershell|pwsh)$") {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class CleanupConsole {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr handle, int command);
+}
+"@
+    $ConsoleHandle = [CleanupConsole]::GetConsoleWindow()
+    if ($ConsoleHandle -ne [IntPtr]::Zero) {
+        [CleanupConsole]::ShowWindow($ConsoleHandle, 0) | Out-Null
+    }
+}
+
+# --- 2. Administrator Check (Self-Elevating) ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
-        Start-Process -FilePath $ExePath -Verb RunAs
+        Start-Process -FilePath $ExePath -Verb RunAs -WindowStyle Hidden
     } else {
         $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs -WindowStyle Hidden
     }
     Exit
 }
 
-# --- TERMINAL ASCII LOGO BANNER ---
-Clear-Host
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Teal = "DarkCyan"
-
-Write-Host "                ,▄▄██████████▄▄,                " -ForegroundColor $Teal
-Write-Host "             ▄████▀▀▀        ▀▀████▄            " -ForegroundColor $Teal
-Write-Host "           ████▀                ▀███▄         " -ForegroundColor $Teal
-Write-Host "         ▄███▀          ▓▓        ▀███▄       " -ForegroundColor $Teal
-Write-Host "        ███▀           ▓▓            ▀███     " -ForegroundColor $Teal
-Write-Host "       ███            ▓▓               ███     " -ForegroundColor $Teal
-Write-Host "      ███            ▓▓                 ███    " -ForegroundColor $Teal
-Write-Host "      ███          ▄███▄          ░░     ███    " -ForegroundColor $Teal
-Write-Host "      ███   •     ███████        ░░░     ███    " -ForegroundColor $Teal
-Write-Host "      ███  •●    █████████     ══        ███    " -ForegroundColor $Teal
-Write-Host "      ███ ▄▄█▄  ███████████   ═══        ███    " -ForegroundColor $Teal
-Write-Host "       ███ ▀▀  █████████████            ███     " -ForegroundColor $Teal
-Write-Host "        ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███      " -ForegroundColor $Teal
-Write-Host "         ▀███▄ ════════════════════ ▄███▀       " -ForegroundColor $Teal
-Write-Host "           ▀████▄                ▄████▀         " -ForegroundColor $Teal
-Write-Host "             ▀██████████████████████▀           " -ForegroundColor $Teal
-Write-Host "                ▀▀▀████████████▀▀▀              " -ForegroundColor $Teal
-Write-Host "`n Starting Myles Mattlock System CleanUp GUI...`n" -ForegroundColor Gray
-
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-
-# --- NATIVE WINDOW DWM COLORING ---
-Add-Type -MemberDefinition @"
-    [DllImport("dwmapi.dll")]
-    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-"@ -Name "DwmApi" -Namespace "Win32" | Out-Null
-
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.0" 
+$Global:CurrentVersion = "3.0.1"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
+$Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
 
@@ -62,6 +62,32 @@ $HexAmber = "#FACC15"
 $HexRed   = "#F87171"
 $HexWhite = "#FFFFFF"
 $HexMuted = "#888888"
+
+function Start-SelfUpdate {
+    param([string]$DownloadUrl, [string]$TargetDirectory, [string]$ApplicationPath, [int]$ParentProcessId)
+    $updaterPath = Join-Path $TargetDirectory 'Update.exe'
+    if ([string]::IsNullOrWhiteSpace($DownloadUrl)) {
+        [System.Windows.Forms.MessageBox]::Show('The update package URL was empty. Download the latest release manually.', 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    if (-not (Test-Path -LiteralPath $updaterPath -PathType Leaf)) {
+        [System.Windows.Forms.MessageBox]::Show("The update helper was not found:`n$updaterPath`n`nReinstall the latest package.", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    try {
+        $arguments = @(
+            "-DownloadUrl `"$DownloadUrl`""
+            "-TargetDirectory `"$TargetDirectory`""
+            "-ApplicationPath `"$ApplicationPath`""
+            "-ParentProcessId $ParentProcessId"
+        ) -join ' '
+        $process = Start-Process -FilePath $updaterPath -ArgumentList $arguments -WindowStyle Normal -PassThru -ErrorAction Stop
+        Write-GuiLog "Updater started (PID $($process.Id))."
+        $Window.Close()
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Could not start the update helper:`n$($_.Exception.Message)`n`nPath: $updaterPath", 'System CleanUp', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    }
+}
 
 # --- XAML UI DESIGN ---
 [xml]$xaml = @"
@@ -204,7 +230,7 @@ $HexMuted = "#888888"
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.1" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
@@ -760,7 +786,12 @@ $Window.Add_Loaded({
             $HasUpdate = $false
             foreach ($Rel in ($Releases | Where-Object { $_.prerelease -eq $false })) {
                 if ([version]($Rel.tag_name.ToLower().TrimStart('v').Split("-")[0]) -gt $LocalVersion) {
-                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "[!] UPDATE AVAILABLE: $($Rel.tag_name)" })
+                    $Asset = $Rel.assets | Where-Object { $_.name -eq "SystemCleanUp.zip" } | Select-Object -First 1
+                    if ($null -ne $Asset -and -not [string]::IsNullOrWhiteSpace($Asset.browser_download_url)) {
+                        $InitQueue.Enqueue(@{ Type = "Update"; Msg = "Version $($Rel.tag_name) is available."; Url = $Asset.browser_download_url })
+                        $HasUpdate = $true; break
+                    }
+                    $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Version $($Rel.tag_name) is available, but SystemCleanUp.zip was not found." })
                     $HasUpdate = $true; break
                 }
             }
@@ -784,6 +815,14 @@ $Window.Add_Loaded({
         $item = $null
         while ($Global:InitQueue.TryDequeue([ref]$item)) {
             if ($item.Type -eq "Log") { Write-GuiLog $item.Msg }
+            elseif ($item.Type -eq "Update" -and -not $Global:UpdatePromptShown) {
+                $Global:UpdatePromptShown = $true
+                $choice = [System.Windows.Forms.MessageBox]::Show("$($item.Msg)`n`nDownload and install it now?", "System CleanUp Update", 'YesNo', 'Information')
+                if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    $applicationPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+                    Start-SelfUpdate -DownloadUrl $item.Url -TargetDirectory $CurrentDir -ApplicationPath $applicationPath -ParentProcessId ([System.Diagnostics.Process]::GetCurrentProcess().Id)
+                }
+            }
         }
         if ($InitAsync.IsCompleted) {
             $this.Stop()
