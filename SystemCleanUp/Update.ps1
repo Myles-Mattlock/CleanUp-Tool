@@ -64,8 +64,12 @@ try {
 
     $payload = Join-Path $extractPath 'SystemCleanUp'
     $newApplication = Join-Path $payload 'System CleanUp.exe'
+    $newUpdater = Join-Path $payload 'Update.exe'
     if (-not (Test-Path $newApplication)) {
         throw 'The release ZIP does not contain SystemCleanUp\System CleanUp.exe.'
+    }
+    if (-not (Test-Path $newUpdater)) {
+        throw 'The release ZIP does not contain SystemCleanUp\Update.exe.'
     }
 
     Set-UpdateStatus "Waiting for System CleanUp to close..."
@@ -81,9 +85,18 @@ try {
 
     Set-UpdateStatus 'Installing updated application files...'
     if (-not (Test-Path $TargetDirectory)) { New-Item -ItemType Directory -Path $TargetDirectory -Force | Out-Null }
+    $updaterPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     $files = Get-ChildItem -LiteralPath $payload -Force
     foreach ($file in $files) {
         $destination = Join-Path $TargetDirectory $file.Name
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals(
+                [System.IO.Path]::GetFullPath($destination),
+                [System.IO.Path]::GetFullPath($updaterPath))) {
+            $stagedUpdater = Join-Path ([System.IO.Path]::GetTempPath()) ("SystemCleanUpUpdate-{0}.exe" -f [guid]::NewGuid())
+            Copy-Item -LiteralPath $file.FullName -Destination $stagedUpdater -Force -ErrorAction Stop
+            Set-UpdateStatus "Staging updated updater $($file.Name)..."
+            continue
+        }
         if ($file.PSIsContainer) {
             Copy-Item -LiteralPath $file.FullName -Destination $destination -Recurse -Force -ErrorAction Stop
         } else {
@@ -92,8 +105,18 @@ try {
         Set-UpdateStatus "Installing $($file.Name)..."
     }
     Unblock-File -LiteralPath $ApplicationPath -ErrorAction SilentlyContinue
-    Set-UpdateStatus 'Starting updated application...'
-    Start-Process -FilePath $ApplicationPath
+    $restartScript = @"
+`$deadline = (Get-Date).AddSeconds(30)
+while (Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue) {
+    if ((Get-Date) -ge `$deadline) { exit 1 }
+    Start-Sleep -Milliseconds 250
+}
+Move-Item -LiteralPath '$stagedUpdater' -Destination '$updaterPath' -Force
+Start-Process -FilePath '$ApplicationPath'
+"@
+    $encodedScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($restartScript))
+    Set-UpdateStatus 'Finishing update and starting application...'
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile', '-EncodedCommand', $encodedScript)
     $status.Text = 'Update complete.'
     $progress.Style = 'Continuous'
     $progress.Value = 100

@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.2"
+$Global:CurrentVersion = "3.0.0"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
@@ -230,7 +230,7 @@ function Start-SelfUpdate {
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.2" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
