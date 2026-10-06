@@ -1,46 +1,45 @@
-# --- 1. Administrator Check (Self-Elevating) ---
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-    if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
-        Start-Process -FilePath $ExePath -Verb RunAs
-    } else {
-        $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs
-    }
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms
+# --- 1. Launch without a visible PowerShell console ---
+$HostProcessName = [System.Diagnostics.Process]::GetCurrentProcess().ProcessName
+if ($HostProcessName -match "^(powershell|pwsh)$" -and $env:CLEANUP_TOOL_HIDDEN -ne "1") {
+    $env:CLEANUP_TOOL_HIDDEN = "1"
+    $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
     Exit
 }
 
-# --- TERMINAL ASCII LOGO BANNER ---
-Clear-Host
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Teal = "DarkCyan"
+# Hide the console window created by a console-based EXE conversion.
+if ($HostProcessName -notmatch "^(powershell|pwsh)$") {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class CleanupConsole {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr handle, int command);
+}
+"@
+    $ConsoleHandle = [CleanupConsole]::GetConsoleWindow()
+    if ($ConsoleHandle -ne [IntPtr]::Zero) {
+        [CleanupConsole]::ShowWindow($ConsoleHandle, 0) | Out-Null
+    }
+}
 
-Write-Host "                ,▄▄██████████▄▄,                " -ForegroundColor $Teal
-Write-Host "             ▄████▀▀▀        ▀▀████▄            " -ForegroundColor $Teal
-Write-Host "           ████▀                ▀███▄         " -ForegroundColor $Teal
-Write-Host "         ▄███▀          ▓▓        ▀███▄       " -ForegroundColor $Teal
-Write-Host "        ███▀           ▓▓            ▀███     " -ForegroundColor $Teal
-Write-Host "       ███            ▓▓               ███     " -ForegroundColor $Teal
-Write-Host "      ███            ▓▓                 ███    " -ForegroundColor $Teal
-Write-Host "      ███          ▄███▄          ░░     ███    " -ForegroundColor $Teal
-Write-Host "      ███   •     ███████        ░░░     ███    " -ForegroundColor $Teal
-Write-Host "      ███  •●    █████████     ══        ███    " -ForegroundColor $Teal
-Write-Host "      ███ ▄▄█▄  ███████████   ═══        ███    " -ForegroundColor $Teal
-Write-Host "       ███ ▀▀  █████████████            ███     " -ForegroundColor $Teal
-Write-Host "        ███▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀          ▄███      " -ForegroundColor $Teal
-Write-Host "         ▀███▄ ════════════════════ ▄███▀       " -ForegroundColor $Teal
-Write-Host "           ▀████▄                ▄████▀         " -ForegroundColor $Teal
-Write-Host "             ▀██████████████████████▀           " -ForegroundColor $Teal
-Write-Host "                ▀▀▀████████████▀▀▀              " -ForegroundColor $Teal
-Write-Host "`n Starting Myles Mattlock System CleanUp GUI...`n" -ForegroundColor Gray
-
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
-
-# --- NATIVE WINDOW DWM COLORING ---
-Add-Type -MemberDefinition @"
-    [DllImport("dwmapi.dll")]
-    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-"@ -Name "DwmApi" -Namespace "Win32" | Out-Null
+# --- 2. Administrator Check (Self-Elevating) ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    if ($ExePath -like "*.exe" -and $ExePath -notlike "*powershell*") {
+        Start-Process -FilePath $ExePath -Verb RunAs -WindowStyle Hidden
+    } else {
+        $ScriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" -Verb RunAs -WindowStyle Hidden
+    }
+    Exit
+}
 
 # --- CONFIGURATION ---
 $Global:CurrentVersion = "3.0.1"
