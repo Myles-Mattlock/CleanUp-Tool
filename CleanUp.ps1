@@ -42,11 +42,12 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.3"
+$Global:CurrentVersion = "3.0.4"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
 $Global:LogDir = "C:\Program Files\SystemCleanUp\Logs"
+$Global:WindowSettingsPath = Join-Path $env:LOCALAPPDATA "SystemCleanUp\window-settings.json"
 
 if ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -like "*.exe" -and [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName -notlike "*powershell*") {
     $CurrentDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
@@ -95,7 +96,7 @@ function Start-SelfUpdate {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Myles Mattlock System CleanUp" Height="920" Width="1000" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
-        ResizeMode="CanMinimize">
+        ResizeMode="CanResize" MinWidth="700" MinHeight="650">
     <Window.Resources>
         <!-- Custom Shimmer Progress Bar Style -->
         <Style x:Key="ShimmerProgressBarStyle" TargetType="ProgressBar">
@@ -155,6 +156,18 @@ function Start-SelfUpdate {
                                 <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CancelButtonStyle" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -230,7 +243,7 @@ function Start-SelfUpdate {
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.3" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.4" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
@@ -266,9 +279,7 @@ function Start-SelfUpdate {
 
         <!-- Output Log Terminal -->
         <Border Grid.Row="3" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
-            <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
-                <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap"/>
-            </ScrollViewer>
+            <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"/>
         </Border>
 
         <!-- Reclaimed Storage Box -->
@@ -297,9 +308,13 @@ function Start-SelfUpdate {
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TxtStatus" Text="Ready to start cleanup." VerticalAlignment="Center" Foreground="#AAAAAA" FontSize="14"/>
-            <Button x:Name="BtnStart" Grid.Column="1" Content="Start Cleanup" Tag="Ready" Width="160" Height="42" 
+            <Button x:Name="BtnCancel" Grid.Column="1" Content="Cancel Cleanup" Width="140" Height="42" Margin="0,0,10,0"
+                    Style="{StaticResource CancelButtonStyle}" Background="#555555" Foreground="#000000" FontSize="13" FontWeight="Bold" BorderThickness="0" Cursor="Hand" IsEnabled="False"
+                    ToolTip="Cancel is available during cleanup stages." ToolTipService.ShowOnDisabled="True"/>
+            <Button x:Name="BtnStart" Grid.Column="2" Content="Start Cleanup" Tag="Ready" Width="160" Height="42" 
                     Style="{StaticResource StartButtonStyle}" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" BorderThickness="0" Cursor="Hand"/>
         </Grid>
     </Grid>
@@ -311,11 +326,12 @@ $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
 @("ImgLogo", "ImgLogoRight", "TxtVersion", "DriveStatsPanel", "TxtReclaimed", 
-  "TxtLog", "LogScroll", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnStart",
+    "TxtLog", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnCancel", "BtnStart",
   "BtnProfileDefault", "BtnProfileServer", "BtnProfileCustom",
   "ChkTempFiles", "ChkRecycleBin", "ChkCleanmgr", "ChkFlushDNS", "ChkDism") | ForEach-Object {
     Set-Variable -Name $_ -Value $Window.FindName($_)
 }
+$LogScroll = $TxtLog
 
 $TaskCheckboxes = @($ChkTempFiles, $ChkRecycleBin, $ChkCleanmgr, $ChkFlushDNS, $ChkDism)
 $InteractiveControls = $TaskCheckboxes + @($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom)
@@ -435,6 +451,27 @@ function Save-LogAndMaintainHistory {
             }
         }
     } catch { Write-GuiLog "Note: Could not save log to disk." }
+}
+
+function Restore-WindowSize {
+    try {
+        if (Test-Path -LiteralPath $Global:WindowSettingsPath -PathType Leaf) {
+            $Settings = Get-Content -LiteralPath $Global:WindowSettingsPath -Raw | ConvertFrom-Json
+            if ($Settings.Width -ge $Window.MinWidth) { $Window.Width = [double]$Settings.Width }
+            if ($Settings.Height -ge $Window.MinHeight) { $Window.Height = [double]$Settings.Height }
+        }
+    } catch {}
+}
+
+function Save-WindowSize {
+    try {
+        $SettingsDirectory = Split-Path -Parent $Global:WindowSettingsPath
+        if (-not (Test-Path -LiteralPath $SettingsDirectory)) {
+            New-Item -Path $SettingsDirectory -ItemType Directory -Force | Out-Null
+        }
+        @{ Width = [Math]::Round($Window.ActualWidth); Height = [Math]::Round($Window.ActualHeight) } |
+            ConvertTo-Json | Set-Content -LiteralPath $Global:WindowSettingsPath -Encoding utf8
+    } catch {}
 }
 
 function Set-ActiveProfileButton ($ProfileMode) {
@@ -725,6 +762,8 @@ $BtnProfileServer.Add_Click({
 $BtnProfileCustom.Add_Click({ if ($BtnStart.IsEnabled) { Set-ActiveProfileButton "Custom" } })
 
 $Window.Add_Loaded({
+    Restore-WindowSize
+
     # Instant DWM Window Frame Coloring
     try {
         $Hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).Handle
@@ -838,6 +877,17 @@ $Window.Add_Loaded({
     $MonitorTimer.Start()
 })
 
+$Window.Add_Closing({ Save-WindowSize })
+
+$BtnCancel.Add_Click({
+    if ($Global:CancelQueue) {
+        $Global:CancelQueue.Enqueue($true)
+        $BtnCancel.IsEnabled = $false
+        $BtnCancel.Content = "Stopping..."
+        $TxtStatus.Text = "Finishing the current stage safely..."
+    }
+})
+
 # Async Execution Worker
 $BtnStart.Add_Click({
     if ($BtnStart.Content -eq "Finished") {
@@ -859,6 +909,11 @@ $BtnStart.Add_Click({
     $BtnStart.Tag = "Cleaning"
     $BtnStart.Background = $BrushActiveBG
     $BtnStart.Foreground = $BrushActiveFG
+    $BtnCancel.IsEnabled = $true
+    $BtnCancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#A83232")
+    $BtnCancel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
+    $BtnCancel.Content = "Cancel Cleanup"
+    $BtnCancel.ToolTip = "Cancel is available during cleanup stages."
     
     # Start Animations (Spinner & Linear Gradient Progress Bar Sweep)
     Start-ButtonSpinner
@@ -870,12 +925,14 @@ $BtnStart.Add_Click({
     $Global:LogQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     $Global:ProgressQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
     $Global:FinishedQueue = [System.Collections.Concurrent.ConcurrentQueue[bool]]::new()
+    $Global:CancelQueue = [System.Collections.Concurrent.ConcurrentQueue[bool]]::new()
 
     $ScriptBlock = {
-        param($CurrentDir, $RegFiles, $SelectedTasks, $LogQueue, $ProgressQueue, $FinishedQueue)
+        param($CurrentDir, $RegFiles, $SelectedTasks, $LogQueue, $ProgressQueue, $FinishedQueue, $CancelQueue)
 
         function Send-Log ($msg) { if (-not [string]::IsNullOrWhiteSpace($msg)) { $LogQueue.Enqueue($msg) } }
         function Send-Progress ($val, $status) { $ProgressQueue.Enqueue(@{ Value = $val; Status = $status }) }
+        function Stop-Requested { $requested = $false; $item = $false; while ($CancelQueue.TryDequeue([ref]$item)) { $requested = $true }; return $requested }
 
         function Invoke-SilentProcess ($FileName, $Arguments) {
             $p = $null
@@ -903,6 +960,7 @@ $BtnStart.Add_Click({
             $FilePath = Join-Path $CurrentDir $File
             if (Test-Path $FilePath) { Invoke-SilentProcess "reg.exe" "import `"$FilePath`"" }
         }
+        if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
 
         if ($SelectedTasks.DoTemp) {
             Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Clearing temporary files..."
@@ -911,6 +969,7 @@ $BtnStart.Add_Click({
                 if (Test-Path $_) { Send-Log "Deleting files in: $_"; Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
             }
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Temp files cleared."
+            if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
         }
 
         if ($SelectedTasks.DoRecycle) {
@@ -919,6 +978,7 @@ $BtnStart.Add_Click({
             Clear-RecycleBin -Force -ErrorAction SilentlyContinue
             Send-Log "Recycle bin emptied."
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "Recycle bin emptied."
+            if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
         }
 
         # 3. Disk Cleanup Utility
@@ -940,6 +1000,7 @@ $BtnStart.Add_Click({
             $CompletedTasks++
             $EndPercent = [Math]::Round(($CompletedTasks / $TotalTasks) * 100)
             Send-Progress $EndPercent "Disk cleanup complete."
+            if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
         }
 
         if ($SelectedTasks.DoFlushDNS) {
@@ -947,6 +1008,7 @@ $BtnStart.Add_Click({
             Send-Log "=== FLUSHING DNS CACHE ==="
             Invoke-SilentProcess "ipconfig.exe" "/flushdns"
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DNS Cache flushed."
+            if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
         }
 
         if ($SelectedTasks.DoDism) {
@@ -954,6 +1016,7 @@ $BtnStart.Add_Click({
             Send-Log "=== RUNNING DISM COMPONENT STORE CLEANUP ==="
             Invoke-SilentProcess "Dism.exe" "/online /Cleanup-Image /StartComponentCleanup /ResetBase /NoRestart /English"
             $CompletedTasks++; Send-Progress ([Math]::Round(($CompletedTasks / $TotalTasks) * 100)) "DISM cleanup complete."
+            if (Stop-Requested) { Send-Log "Cleanup cancelled after the current stage."; Send-Progress 100 "Cleanup cancelled safely."; $FinishedQueue.Enqueue($true); return }
         }
 
         Send-Progress 100 "Optimization Complete!"
@@ -965,7 +1028,7 @@ $BtnStart.Add_Click({
     $Global:PowerShell = [powershell]::Create()
     $Global:PowerShell.Runspace = $Global:Runspace
     [void]$Global:PowerShell.AddScript($ScriptBlock)
-    @($CurrentDir, $Global:RegFiles, $SelectedTasks, $Global:LogQueue, $Global:ProgressQueue, $Global:FinishedQueue) | ForEach-Object {
+    @($CurrentDir, $Global:RegFiles, $SelectedTasks, $Global:LogQueue, $Global:ProgressQueue, $Global:FinishedQueue, $Global:CancelQueue) | ForEach-Object {
         [void]$Global:PowerShell.AddArgument($_)
     }
     
@@ -977,6 +1040,15 @@ $BtnStart.Add_Click({
         $msg = ""; while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
         $prog = $null; while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
             $CleanProgress.Value = $prog.Value; $TxtProgressPercent.Text = "$($prog.Value)%"; $TxtStatus.Text = $prog.Status
+            if ($prog.Status -eq "Optimizing DISM Component Store...") {
+                $BtnCancel.IsEnabled = $false
+                $BtnCancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#555555")
+                $BtnCancel.ToolTip = "Cannot stop during DISM cleanup."
+            } elseif ($prog.Status -eq "DISM cleanup complete." -and $BtnStart.Content -eq "Cleaning...") {
+                $BtnCancel.IsEnabled = $true
+                $BtnCancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#A83232")
+                $BtnCancel.ToolTip = "Cancel is available during cleanup stages."
+            }
         }
 
         $isDone = $false
@@ -984,6 +1056,11 @@ $BtnStart.Add_Click({
             while ($Global:LogQueue.TryDequeue([ref]$msg)) { Write-GuiLog $msg }
             while ($Global:ProgressQueue.TryDequeue([ref]$prog)) {
                 $CleanProgress.Value = $prog.Value; $TxtProgressPercent.Text = "$($prog.Value)%"; $TxtStatus.Text = $prog.Status
+                if ($prog.Status -eq "Optimizing DISM Component Store...") {
+                    $BtnCancel.IsEnabled = $false
+                    $BtnCancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#555555")
+                    $BtnCancel.ToolTip = "Cannot stop during DISM cleanup."
+                }
             }
 
             $this.Stop()
@@ -1005,6 +1082,11 @@ $BtnStart.Add_Click({
             $BtnStart.Tag = "Finished"
             $BtnStart.Background = $BrushFinishBG
             $BtnStart.Foreground = $BrushFinishFG
+            $BtnCancel.IsEnabled = $false
+            $BtnCancel.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#555555")
+            $BtnCancel.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
+            $BtnCancel.Content = "Cancel Cleanup"
+            $BtnCancel.ToolTip = "Cancel is available during cleanup stages."
             $InteractiveControls | ForEach-Object { $_.IsEnabled = $true }
             
             Write-GuiLog "=== CLEANUP COMPLETE! TOTAL STORAGE RECLAIMED: $ReadableSpace ==="
