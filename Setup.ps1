@@ -118,16 +118,6 @@ $install.Add_Click({
         $status.Text = 'Closing any running instance...'
         Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
-        $status.Text = 'Installing Smartmontools...'
-        if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-            throw 'Windows Package Manager (winget) was not found. Install App Installer from the Microsoft Store and run Setup again.'
-        }
-        & winget.exe install --id smartmontools.smartmontools --exact --accept-source-agreements --accept-package-agreements
-        if ($LASTEXITCODE -ne 0) {
-            $installedPackage = & winget.exe list --id smartmontools.smartmontools --exact --accept-source-agreements 2>$null |
-                Select-String -SimpleMatch 'smartmontools.smartmontools'
-            if (-not $installedPackage) { throw "Smartmontools installation failed with exit code $LASTEXITCODE." }
-        }
         $status.Text = 'Copying application files...'
         $targetRoot = [System.IO.Path]::GetFullPath($target).TrimEnd('\')
         $sourceIsTarget = [string]::Equals($sourceRoot, $targetRoot, [System.StringComparison]::OrdinalIgnoreCase)
@@ -159,7 +149,7 @@ $install.Add_Click({
         }
         New-Item $UninstallKey -Force | Out-Null
         New-ItemProperty $UninstallKey -Name DisplayName -Value $AppName -PropertyType String -Force | Out-Null
-        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '3.0.4' -PropertyType String -Force | Out-Null
+        New-ItemProperty $UninstallKey -Name DisplayVersion -Value '3.1.0' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name Publisher -Value 'Myles Mattlock' -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name InstallLocation -Value $target -PropertyType String -Force | Out-Null
         New-ItemProperty $UninstallKey -Name DisplayIcon -Value $executablePath -PropertyType String -Force | Out-Null

@@ -42,7 +42,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # --- CONFIGURATION ---
-$Global:CurrentVersion = "3.0.4"
+$Global:CurrentVersion = "3.1.0"
 $Global:RepoName = "Myles-Mattlock/CleanUp-Tool"
 $Global:UpdatePromptShown = $false
 $Global:RegFiles = @("DiskCleanupSettings.reg", "DiskCleanupSettings2.reg") 
@@ -96,7 +96,7 @@ function Start-SelfUpdate {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Myles Mattlock System CleanUp" Height="920" Width="1000" 
         WindowStartupLocation="CenterScreen" Background="#1E1E1E" Foreground="#FFFFFF"
-        ResizeMode="CanResize" MinWidth="700" MinHeight="650">
+        ResizeMode="CanResize" MinWidth="700" MinHeight="780">
     <Window.Resources>
         <!-- Custom Shimmer Progress Bar Style -->
         <Style x:Key="ShimmerProgressBarStyle" TargetType="ProgressBar">
@@ -222,8 +222,8 @@ function Start-SelfUpdate {
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -243,16 +243,14 @@ function Start-SelfUpdate {
                     <TextBlock Text="Myles Mattlock System CleanUp" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF"/>
                     <TextBlock Text="Optimize storage, system files, and component health" FontSize="14" Foreground="#AAAAAA" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.0.4" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                <TextBlock x:Name="TxtVersion" Grid.Column="2" Text="v3.1.0" VerticalAlignment="Center" Foreground="#888888" FontSize="16" FontWeight="SemiBold" Margin="0,0,20,0"/>
                 <Image x:Name="ImgLogoRight" Grid.Column="3" Width="78.75" Height="78.75" VerticalAlignment="Center" Stretch="Uniform"/>
             </Grid>
         </Border>
 
         <!-- Top Stats Bar Container for Multiple Drives -->
-        <StackPanel x:Name="DriveStatsPanel" Grid.Row="1" Margin="0,0,0,15"/>
-
         <!-- Task Selection Checkboxes & Profile Buttons -->
-        <Border Grid.Row="2" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
+        <Border Grid.Row="1" Background="#252526" CornerRadius="6" Padding="12" Margin="0,0,0,15">
             <StackPanel>
                 <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
@@ -278,12 +276,12 @@ function Start-SelfUpdate {
         </Border>
 
         <!-- Output Log Terminal -->
-        <Border Grid.Row="3" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12">
-            <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"/>
+        <Border Grid.Row="2" Background="#0C0C0C" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="12" ClipToBounds="True" MinHeight="0">
+            <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#00FF66" BorderThickness="0" FontFamily="Consolas" FontSize="13" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalAlignment="Stretch" MinHeight="0"/>
         </Border>
 
         <!-- Reclaimed Storage Box -->
-        <Border Grid.Row="4" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
+        <Border Grid.Row="3" Height="82" MaxHeight="82" Background="#2D2D30" CornerRadius="6" Padding="15" Margin="0,15,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -293,18 +291,18 @@ function Start-SelfUpdate {
                     <TextBlock Text="TOTAL STORAGE RECLAIMED" FontSize="11" FontWeight="Bold" Foreground="#888888"/>
                     <TextBlock Text="Space freed during the current optimization session" FontSize="12" Foreground="#AAAAAA" Margin="0,2,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="TxtReclaimed" Grid.Column="1" Text="0 MB" FontSize="22" FontWeight="Bold" Foreground="#00FF66" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TxtReclaimed" Grid.Column="1" Text="0 MB" MaxWidth="150" TextTrimming="CharacterEllipsis" FontSize="22" FontWeight="Bold" Foreground="#00FF66" VerticalAlignment="Center"/>
             </Grid>
         </Border>
 
         <!-- Progress Bar with Percentage Overlay -->
-        <Grid Grid.Row="5" Height="18" Margin="0,15,0,15">
+        <Grid Grid.Row="4" Height="18" Margin="0,15,0,15">
             <ProgressBar x:Name="CleanProgress" Style="{StaticResource ShimmerProgressBarStyle}" Value="0" Maximum="100"/>
             <TextBlock x:Name="TxtProgressPercent" Text="0%" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
 
         <!-- Action Controls -->
-        <Grid Grid.Row="6">
+        <Grid Grid.Row="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -325,7 +323,7 @@ function Start-SelfUpdate {
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $Window = [Windows.Markup.XamlReader]::Load($reader)
 
-@("ImgLogo", "ImgLogoRight", "TxtVersion", "DriveStatsPanel", "TxtReclaimed", 
+@("ImgLogo", "ImgLogoRight", "TxtVersion", "TxtReclaimed",
     "TxtLog", "CleanProgress", "TxtProgressPercent", "TxtStatus", "BtnCancel", "BtnStart",
   "BtnProfileDefault", "BtnProfileServer", "BtnProfileCustom",
   "ChkTempFiles", "ChkRecycleBin", "ChkCleanmgr", "ChkFlushDNS", "ChkDism") | ForEach-Object {
@@ -349,8 +347,6 @@ $BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
-$Global:HasAlertedHighTemp = $false
-$Global:DriveUIMap = @{}
 
 # --- HIGH TEMPERATURE ALERT TONE FUNCTION ---
 function Play-TempAlertSound {
@@ -490,242 +486,6 @@ function Invoke-CurrentProfileEvaluation {
     else { Set-ActiveProfileButton "Custom" }
 }
 
-function Add-DriveRowUI ($DriveLetter, $InitialFreeText) {
-    $Grid = New-Object System.Windows.Controls.Grid
-    $Grid.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
-
-    0..5 | ForEach-Object {
-        $col = New-Object System.Windows.Controls.ColumnDefinition
-        $col.Width = [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star)
-        [void]$Grid.ColumnDefinitions.Add($col)
-        if ($_ -lt 5) {
-            $spaceCol = New-Object System.Windows.Controls.ColumnDefinition
-            $spaceCol.Width = [System.Windows.GridLength]::new(8, [System.Windows.GridUnitType]::Pixel)
-            [void]$Grid.ColumnDefinitions.Add($spaceCol)
-        }
-    }
-
-    function Create-Card ($Title, $ValText, $FgHex, $ColIdx) {
-        $Border = New-Object System.Windows.Controls.Border
-        $Border.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#2D2D30")
-        $Border.CornerRadius = New-Object System.Windows.CornerRadius(6)
-        $Border.Padding = New-Object System.Windows.Thickness(8, 10, 8, 10)
-        [System.Windows.Controls.Grid]::SetColumn($Border, $ColIdx)
-
-        $Stack = New-Object System.Windows.Controls.StackPanel
-        $TTitle = New-Object System.Windows.Controls.TextBlock
-        $TTitle.Text = $Title; $TTitle.FontSize = 10; $TTitle.FontWeight = [System.Windows.FontWeights]::Bold
-        $TTitle.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#888888")
-
-        $TVal = New-Object System.Windows.Controls.TextBlock
-        $TVal.Text = $ValText; $TVal.FontSize = 14; $TVal.FontWeight = [System.Windows.FontWeights]::Bold
-        $TVal.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($FgHex)
-        $TVal.Margin = New-Object System.Windows.Thickness(0, 4, 0, 0)
-
-        [void]$Stack.Children.Add($TTitle)
-        [void]$Stack.Children.Add($TVal)
-        $Border.Child = $Stack
-        return @{ Border = $Border; Text = $TVal }
-    }
-
-    $CardSpace    = Create-Card "DRIVE SPACE ($DriveLetter)" $InitialFreeText $HexWhite 0
-    $CardHealth   = Create-Card "HEALTH" "Loading..." $HexMuted 2
-    $CardTemp     = Create-Card "TEMP" "Loading..." $HexMuted 4
-    $CardHours    = Create-Card "POWER HOURS" "Loading..." $HexMuted 6
-    $CardCycles   = Create-Card "POWER CYCLES" "Loading..." $HexMuted 8
-    $CardShutdown = Create-Card "UNSAFE SHUTDOWN" "Loading..." $HexMuted 10
-
-    [void]$Grid.Children.Add($CardSpace.Border)
-    [void]$Grid.Children.Add($CardHealth.Border)
-    [void]$Grid.Children.Add($CardTemp.Border)
-    [void]$Grid.Children.Add($CardHours.Border)
-    [void]$Grid.Children.Add($CardCycles.Border)
-    [void]$Grid.Children.Add($CardShutdown.Border)
-
-    [void]$DriveStatsPanel.Children.Add($Grid)
-    $Global:DriveUIMap[$DriveLetter] = @{ 
-        Health   = $CardHealth.Text; 
-        Temp     = $CardTemp.Text;
-        Hours    = $CardHours.Text;
-        Cycles   = $CardCycles.Text;
-        Unsafe   = $CardShutdown.Text
-    }
-}
-
-function Get-SmartctlData ($DiskIndex) {
-    $SmartctlPath = Get-Command "smartctl.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-    if (-not $SmartctlPath) {
-        $Candidates = @(
-            (Join-Path $CurrentDir "smartctl.exe"),
-            "C:\Program Files\smartmontools\bin\smartctl.exe",
-            "C:\Program Files (x86)\smartmontools\bin\smartctl.exe"
-        )
-        foreach ($Path in $Candidates) {
-            if (Test-Path $Path) { $SmartctlPath = $Path; break }
-        }
-    }
-
-    if (-not $SmartctlPath) { return $null }
-
-    $p = $null
-    try {
-        $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo -Property @{
-            FileName               = $SmartctlPath
-            Arguments              = "-j -a /dev/pd$DiskIndex"
-            UseShellExecute        = $false
-            RedirectStandardOutput = $true
-            CreateNoWindow         = $true
-        }
-        $p = [System.Diagnostics.Process]::Start($ProcessInfo)
-        $Output = $p.StandardOutput.ReadToEnd()
-        $p.WaitForExit()
-
-        if (-not [string]::IsNullOrWhiteSpace($Output)) {
-            return ($Output | ConvertFrom-Json)
-        }
-    } catch {}
-    finally {
-        if ($null -ne $p) {
-            $p.Close()
-            $p.Dispose()
-        }
-    }
-    return $null
-}
-
-function Update-DriveHealthAndTemp {
-    try {
-        $PhysicalDisks = Get-PhysicalDisk -ErrorAction SilentlyContinue
-        $IsHighTempDetected = $false
-
-        foreach ($Disk in $PhysicalDisks) {
-            $TempStr = "N/A"; $TempHex = $HexGreen
-            $HealthStr = "Healthy"; $HealthHex = $HexGreen
-            $HoursStr = "N/A"
-            $CyclesStr = "N/A"
-            $UnsafeStr = "N/A"
-
-            # 1. Primary NVMe / SSD Temperature query via Windows Storage Reliability Counter
-            $StorageStats = $Disk | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
-            if ($StorageStats -and $StorageStats.Temperature) {
-                $RawTemp = [int]$StorageStats.Temperature
-                $TempStr = "$RawTemp °C"
-                if ($RawTemp -ge 70) {
-                    $TempHex = $HexRed
-                    $IsHighTempDetected = $true
-                } elseif ($RawTemp -ge 50) {
-                    $TempHex = $HexAmber
-                } else {
-                    $TempHex = $HexGreen
-                }
-            }
-
-            # 2. Fetch smartctl JSON for detailed SMART attributes
-            $Json = Get-SmartctlData -DiskIndex $Disk.DeviceId
-
-            if ($Json) {
-                # Fallback Temperature query if StorageReliabilityCounter returned null
-                if ($TempStr -eq "N/A") {
-                    $RawTemp = $null
-                    if ($Json.temperature.current) {
-                        $RawTemp = [int]$Json.temperature.current
-                    } elseif ($Json.nvme_smart_health_information_log.temperature) {
-                        $RawTemp = [int]$Json.nvme_smart_health_information_log.temperature
-                    }
-
-                    if ($null -ne $RawTemp) {
-                        $TempStr = "$RawTemp °C"
-                        if ($RawTemp -ge 70) {
-                            $TempHex = $HexRed
-                            $IsHighTempDetected = $true
-                        } elseif ($RawTemp -ge 50) { $TempHex = $HexAmber }
-                        else { $TempHex = $HexGreen }
-                    }
-                }
-
-                # Health / Wear Evaluation
-                if ($null -ne $Json.nvme_smart_health_information_log.percentage_used) {
-                    $Used = [int]$Json.nvme_smart_health_information_log.percentage_used
-                    $HealthVal = 100 - $Used
-                    $HealthStr = "$HealthVal% Health"
-
-                    if ($HealthVal -lt 70) { $HealthHex = $HexRed }
-                    elseif ($HealthVal -lt 90) { $HealthHex = $HexAmber }
-                    else { $HealthHex = $HexGreen }
-                } elseif ($Json.smart_status.passed -eq $true) {
-                    $HealthStr = "100% Health"
-                    $HealthHex = $HexGreen
-                }
-
-                # Power-On Hours
-                if ($Json.power_on_time.hours) {
-                    $HoursStr = "$($Json.power_on_time.hours) hrs"
-                } elseif ($Json.nvme_smart_health_information_log.power_on_hours) {
-                    $HoursStr = "$($Json.nvme_smart_health_information_log.power_on_hours) hrs"
-                }
-
-                # Power Cycles
-                if ($Json.power_cycle_count) {
-                    $CyclesStr = "$($Json.power_cycle_count)"
-                } elseif ($Json.nvme_smart_health_information_log.power_cycles) {
-                    $CyclesStr = "$($Json.nvme_smart_health_information_log.power_cycles)"
-                }
-
-                # Unsafe Shutdowns
-                $RawUnsafe = $null
-                if ($null -ne $Json.nvme_smart_health_information_log.unsafe_shutdowns) {
-                    $RawUnsafe = [int]$Json.nvme_smart_health_information_log.unsafe_shutdowns
-                } else {
-                    $Attr = $Json.ata_smart_attributes.table | Where-Object { $_.id -eq 192 -or $_.name -like "*Unsafe_Shutdown*" }
-                    if ($Attr) { $RawUnsafe = [int]$Attr.raw.value }
-                }
-
-                if ($null -ne $RawUnsafe) { $UnsafeStr = "$RawUnsafe" }
-            } else {
-                if ($Disk.HealthStatus) { $HealthStr = $Disk.HealthStatus }
-            }
-
-            # 3. Update UI Cards
-            $DiskObj = Get-Disk | Where-Object { $_.Number -eq $Disk.DeviceId -or $_.UniqueId -eq $Disk.UniqueId } -ErrorAction SilentlyContinue
-            if ($DiskObj) {
-                $Partitions = $DiskObj | Get-Partition -ErrorAction SilentlyContinue
-                foreach ($Part in $Partitions) {
-                    if ($Part.DriveLetter) {
-                        $Key = "$($Part.DriveLetter):"
-                        if ($Global:DriveUIMap.ContainsKey($Key)) {
-                            $Global:DriveUIMap[$Key].Health.Text       = $HealthStr
-                            $Global:DriveUIMap[$Key].Health.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HealthHex)
-
-                            $Global:DriveUIMap[$Key].Temp.Text         = $TempStr
-                            $Global:DriveUIMap[$Key].Temp.Foreground   = [System.Windows.Media.BrushConverter]::new().ConvertFromString($TempHex)
-
-                            $Global:DriveUIMap[$Key].Hours.Text        = $HoursStr
-                            $Global:DriveUIMap[$Key].Hours.Foreground  = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
-
-                            $Global:DriveUIMap[$Key].Cycles.Text       = $CyclesStr
-                            $Global:DriveUIMap[$Key].Cycles.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
-
-                            $Global:DriveUIMap[$Key].Unsafe.Text       = $UnsafeStr
-                            $Global:DriveUIMap[$Key].Unsafe.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($HexWhite)
-                        }
-                    }
-                }
-            }
-        }
-
-        # 4. Sound Alert Trigger (Plays on GUI main thread so Beep works)
-        if ($IsHighTempDetected) {
-            if (-not $Global:HasAlertedHighTemp) {
-                $Global:HasAlertedHighTemp = $true
-                Write-GuiLog "[!] ALERT: High disk temperature detected (>= 70°C)!"
-                Play-TempAlertSound
-            }
-        } else {
-            $Global:HasAlertedHighTemp = $false
-        }
-    } catch {}
-}
-
 # Attach Hover & Checkbox Events
 @($BtnProfileDefault, $BtnProfileServer, $BtnProfileCustom) | ForEach-Object {
     $_.Add_MouseEnter({
@@ -783,25 +543,7 @@ $Window.Add_Loaded({
 
     $TxtVersion.Text = "v$Global:CurrentVersion"
     
-    # Render rows instantly using fast .NET DriveInfo
-    $Drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | Select-Object -First 3
-    foreach ($Drive in $Drives) {
-        $Letter = $Drive.Name.TrimEnd('\')
-        $FreeGB = "$([Math]::Round($Drive.AvailableFreeSpace / 1GB, 2)) GB"
-        if ($Letter -eq "C:") { $Global:StartingFreeSpace = $Drive.AvailableFreeSpace }
-        Add-DriveRowUI -DriveLetter $Letter -InitialFreeText $FreeGB
-    }
-
     Write-GuiLog "System Cleanup Initialized."
-
-    # Non-blocking update trigger via DispatcherTimer (100ms delay)
-    $StartTelemetryTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $StartTelemetryTimer.Interval = [TimeSpan]::FromMilliseconds(100)
-    $StartTelemetryTimer.Add_Tick({
-        $this.Stop()
-        Update-DriveHealthAndTemp
-    })
-    $StartTelemetryTimer.Start()
 
     # GLOBAL INITIALIZATION QUEUE
     $Global:InitQueue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
@@ -810,14 +552,7 @@ $Window.Add_Loaded({
     $InitScript = {
         param($RepoName, $CurrentVersion, $InitQueue)
 
-        # 1. SMART Hardware Scan Log
-        try {
-            Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | ForEach-Object {
-                $InitQueue.Enqueue(@{ Type = "Log"; Msg = "Drive [$($_.Index)]: $($_.Model) ($($_.InterfaceType)) - SMART Status: $($_.Status)" })
-            }
-        } catch {}
-
-        # 2. Check Updates
+        # Check Updates
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             $Releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoName/releases" -Method Get -UserAgent "Mozilla/5.0 PowerShell-App" -ErrorAction Stop
@@ -870,11 +605,6 @@ $Window.Add_Loaded({
     })
     $InitTimer.Start()
 
-    # Recurring 30-second monitor timer
-    $MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $MonitorTimer.Interval = [TimeSpan]::FromSeconds(30)
-    $MonitorTimer.Add_Tick({ Update-DriveHealthAndTemp })
-    $MonitorTimer.Start()
 })
 
 $Window.Add_Closing({ Save-WindowSize })
