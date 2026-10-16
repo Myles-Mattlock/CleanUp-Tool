@@ -29,6 +29,24 @@ public static class CleanupConsole {
     }
 }
 
+if (-not ("Win32.DwmApi" -as [type])) {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Win32 {
+    public static class DwmApi {
+        [DllImport("dwmapi.dll")]
+        public static extern int DwmSetWindowAttribute(
+            IntPtr hwnd,
+            int attribute,
+            ref int value,
+            int valueSize);
+    }
+}
+"@
+}
+
 # --- 2. Administrator Check (Self-Elevating) ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $ExePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
