@@ -143,6 +143,53 @@ function Start-SelfUpdate {
             </Setter>
         </Style>
 
+        <Style x:Key="Windows11CheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#F3F3F3"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="7,0,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border x:Name="Box"
+                                    Width="17" Height="17"
+                                    Background="#292929"
+                                    BorderBrush="#777777"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    VerticalAlignment="Center">
+                                <Path x:Name="CheckMark"
+                                      Data="M 3,8.5 L 6.5,12 L 14,4.5"
+                                      Stroke="#FFFFFF"
+                                      StrokeThickness="2"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#333333"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#AAAAAA"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#0078D4"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#0078D4"/>
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Opacity" Value="0.5"/>
+                                <Setter Property="Foreground" Value="#777777"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ProfileButtonStyle" TargetType="Button">
             <Setter Property="Template">
                 <Setter.Value>
@@ -266,11 +313,11 @@ function Start-SelfUpdate {
                     </StackPanel>
                 </Grid>
                 <WrapPanel>
-                    <CheckBox x:Name="ChkTempFiles" Content="Clear Temp Files &amp; System Logs" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
-                    <CheckBox x:Name="ChkRecycleBin" Content="Empty Recycle Bin" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
-                    <CheckBox x:Name="ChkCleanmgr" Content="Run Disk Cleanup Utility" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
-                    <CheckBox x:Name="ChkFlushDNS" Content="Flush DNS Cache" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
-                    <CheckBox x:Name="ChkDism" Content="DISM Component Store Cleanup" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkTempFiles" Content="Clear Temp Files &amp; System Logs" IsChecked="True" Style="{StaticResource Windows11CheckBoxStyle}" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkRecycleBin" Content="Empty Recycle Bin" IsChecked="True" Style="{StaticResource Windows11CheckBoxStyle}" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkCleanmgr" Content="Run Disk Cleanup Utility" IsChecked="True" Style="{StaticResource Windows11CheckBoxStyle}" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkFlushDNS" Content="Flush DNS Cache" IsChecked="True" Style="{StaticResource Windows11CheckBoxStyle}" Margin="0,0,15,5" Cursor="Hand"/>
+                    <CheckBox x:Name="ChkDism" Content="DISM Component Store Cleanup" IsChecked="True" Style="{StaticResource Windows11CheckBoxStyle}" Margin="0,0,15,5" Cursor="Hand"/>
                 </WrapPanel>
             </StackPanel>
         </Border>
@@ -347,16 +394,6 @@ $BrushFinishBG    = [System.Windows.Media.BrushConverter]::new().ConvertFromStri
 $BrushFinishFG    = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#000000")
 
 $Global:IsUpdatingProfile = $false
-
-# --- HIGH TEMPERATURE ALERT TONE FUNCTION ---
-function Play-TempAlertSound {
-    for ($i = 0; $i -lt 20; $i++) {
-        [Console]::Beep(1500, 150)
-        Start-Sleep -Milliseconds 50
-        [Console]::Beep(800, 150)
-        Start-Sleep -Milliseconds 50
-    }
-}
 
 # --- ANIMATION CONTROLS ---
 $Duration = New-Object System.Windows.Duration ([TimeSpan]::FromSeconds(1))
