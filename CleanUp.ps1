@@ -689,6 +689,13 @@ $BtnStart.Add_Click({
         $TxtStatus.Text = "Please select at least one task to run."; return
     }
 
+    $DriveC = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq "C:\" }
+    if ($null -eq $DriveC -or -not $DriveC.IsReady) {
+        $TxtStatus.Text = "Unable to measure free space on drive C:."
+        return
+    }
+    $Global:StartingFreeSpace = $DriveC.AvailableFreeSpace
+
     $BtnStart.IsEnabled = $false
     $BtnStart.Content = "Cleaning..."
     $BtnStart.Tag = "Cleaning"
